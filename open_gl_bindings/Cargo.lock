@@ -1,8 +1,8 @@
 [root]
-name = "sdl2-opengl-test"
+name = "open_gl_bindings"
 version = "0.1.0"
 dependencies = [
- "open_gl_bindings 0.1.0",
+ "gl_generator 0.5.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -29,13 +29,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "log"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "open_gl_bindings"
-version = "0.1.0"
-dependencies = [
- "gl_generator 0.5.5 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "xml-rs"
