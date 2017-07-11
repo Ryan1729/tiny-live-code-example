@@ -1,0 +1,10 @@
+[package]
+name = "sdl2-opengl-test"
+version = "0.1.0"
+authors = ["Ryan1729 <Ryan1729@gmail.com>"]
+build = "build.rs"
+
+[dependencies]
+
+[build-dependencies]
+gl_generator = "0.5.5"
