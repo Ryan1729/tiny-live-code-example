@@ -3,6 +3,8 @@ extern crate sdl2;
 
 use open_gl_bindings::gl;
 
+use sdl2::event::Event;
+
 use std::ffi::CStr;
 use std::str;
 
@@ -30,7 +32,7 @@ fn main() {
         .unwrap();
 
     let ctx = gl::Gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
-    canvas.window().gl_set_context_to_current();
+    canvas.window().gl_set_context_to_current().unwrap();
 
     let char_ptr = unsafe { ctx.GetString(gl::VERSION) };
     let c_str: &CStr = unsafe { CStr::from_ptr(std::mem::transmute(char_ptr)) };
@@ -39,4 +41,19 @@ fn main() {
     let version: String = str_slice.to_owned();
 
     println!("OpenGL version: {}", version);
+
+    let mut event_pump = sdl_context.event_pump().unwrap();
+
+    'running: loop {
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::Quit { .. } |
+                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Escape), .. } |
+                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F10), .. } => {
+                    break 'running;
+                }
+                _ => {}
+            }
+        }
+    }
 }
