@@ -6,6 +6,7 @@ use open_gl_bindings::gl;
 use sdl2::event::Event;
 
 use std::ffi::CStr;
+use std::ffi::CString;
 use std::str;
 
 fn find_sdl_gl_driver() -> Option<u32> {
@@ -63,7 +64,14 @@ fn main() {
         ctx.ClearColor(0.0, 0.0, 0.0, 1.0);
         ctx.Enable(gl::BLEND);
         ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+
     }
+
+    let vs = compile_shader(&ctx, VS_SRC, gl::VERTEX_SHADER);
+
+    let fs = compile_shader(&ctx, FS_SRC, gl::FRAGMENT_SHADER);
+
+    let program = link_program(&ctx, vs, fs);
 
     let mut world_matrix: [f32; 16] = [
         1.0,
@@ -85,6 +93,61 @@ fn main() {
     ];
 
     let verts: Vec<f32> = get_verts();
+
+    let vertex_buffer = unsafe {
+        let mut buffer = 0;
+
+        ctx.GenBuffers(1, &mut buffer as _);
+        ctx.BindBuffer(gl::ARRAY_BUFFER, buffer);
+        ctx.BufferData(
+            gl::ARRAY_BUFFER,
+            (verts.len() * std::mem::size_of::<f32>()) as _,
+            std::mem::transmute(verts.as_ptr()),
+            gl::DYNAMIC_DRAW,
+        );
+
+        buffer
+    };
+
+    let indices: Vec<gl::types::GLushort> =
+        (0..verts.len()).map(|x| x as gl::types::GLushort).collect();
+
+    let index_buffer = unsafe {
+        let mut buffer = 0;
+
+        ctx.GenBuffers(1, &mut buffer as _);
+        ctx.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
+        ctx.BufferData(
+            gl::ELEMENT_ARRAY_BUFFER,
+            (indices.len() * std::mem::size_of::<gl::types::GLushort>()) as _,
+            std::mem::transmute(indices.as_ptr()),
+            gl::DYNAMIC_DRAW,
+        );
+
+        buffer
+    };
+    unsafe {
+        ctx.UseProgram(program);
+
+        let pos_attr = ctx.GetAttribLocation(program, CString::new("position").unwrap().as_ptr());
+
+        ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
+        ctx.EnableVertexAttribArray(pos_attr as _);
+        ctx.VertexAttribPointer(
+            pos_attr as _,
+            2,
+            gl::FLOAT,
+            gl::FALSE as _,
+            0,
+            std::ptr::null(),
+        )
+
+    }
+    let world_attr =
+        unsafe { ctx.GetUniformLocation(program, CString::new("world").unwrap().as_ptr()) };
+
+    let colour_uniform =
+        unsafe { ctx.GetUniformLocation(program, CString::new("colour").unwrap().as_ptr()) };
 
     let mut event_pump = sdl_context.event_pump().unwrap();
 
@@ -112,7 +175,26 @@ fn main() {
             }
         }
 
-        draw_frame(&ctx, &world_matrix, &verts);
+        unsafe {
+            ctx.UniformMatrix4fv(world_attr as _, 1, gl::FALSE, world_matrix.as_ptr() as _);
+        }
+
+        draw_frame(&ctx, (verts.len() / 2) as _, colour_uniform);
+
+        if cfg!(debug_assertions) {
+            let mut err;
+            while {
+                err = unsafe { ctx.GetError() };
+                err != gl::NO_ERROR
+            }
+            {
+                println!("OpenGL error: {}", err);
+            }
+            if err != gl::NO_ERROR {
+                panic!();
+            }
+
+        }
 
         window.gl_swap_window();
 
@@ -120,7 +202,7 @@ fn main() {
     }
 }
 
-fn draw_frame(ctx: &gl::Gl, world_matrix: &[f32; 16], verts: &Vec<f32>) {
+fn draw_frame(ctx: &gl::Gl, vert_count: gl::types::GLsizei, colour_uniform: gl::types::GLint) {
     unsafe {
         ctx.Clear(
             gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
@@ -128,38 +210,118 @@ fn draw_frame(ctx: &gl::Gl, world_matrix: &[f32; 16], verts: &Vec<f32>) {
 
         ctx.Clear(gl::STENCIL_BUFFER_BIT);
 
-
-        ctx.EnableClientState(gl::VERTEX_ARRAY);
-        ctx.VertexPointer(2, gl::FLOAT, 0, std::mem::transmute(verts.as_ptr()));
-
-        ctx.MatrixMode(gl::MODELVIEW);
-        ctx.PushMatrix();
-
-        ctx.MultMatrixf(world_matrix.as_ptr());
-
-        let cnt = (verts.len() / 2) as _;
-
         ctx.Enable(gl::STENCIL_TEST);
-
         ctx.ColorMask(gl::FALSE, gl::FALSE, gl::FALSE, gl::FALSE);
         ctx.StencilOp(gl::INVERT, gl::INVERT, gl::INVERT);
         ctx.StencilFunc(gl::ALWAYS, 0x1, 0x1);
-        ctx.Color4f(1.0, 1.0, 1.0, 1.0);
-        ctx.DrawArrays(gl::TRIANGLE_FAN, 0, cnt);
+
+        ctx.Uniform4f(colour_uniform, 1.0, 1.0, 1.0, 1.0);
+
+        ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
 
         ctx.ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
-        ctx.Color4f(32.0 / 255.0, 32.0 / 255.0, 63.0 / 255.0, 1.0);
+        ctx.Uniform4f(
+            colour_uniform,
+            32.0 / 255.0,
+            32.0 / 255.0,
+            63.0 / 255.0,
+            1.0,
+        );
 
         ctx.StencilOp(gl::ZERO, gl::ZERO, gl::ZERO);
         ctx.StencilFunc(gl::EQUAL, 1, 1);
-        ctx.DrawArrays(gl::TRIANGLE_FAN, 0, cnt);
+        ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
         ctx.Disable(gl::STENCIL_TEST);
 
         //outline
-        ctx.Color4f(128.0 / 255.0, 128.0 / 255.0, 32.0 / 255.0, 1.0);
-        ctx.DrawArrays(gl::LINE_STRIP, 0, cnt);
+        ctx.Uniform4f(
+            colour_uniform,
+            128.0 / 255.0,
+            128.0 / 255.0,
+            32.0 / 255.0,
+            1.0,
+        );
+        ctx.DrawArrays(gl::LINE_STRIP, 0, vert_count);
+    }
+}
+static VS_SRC: &'static str = "#version 120\n\
+    attribute vec2 position;\n\
+    uniform mat4 world;\n\
+    void main() {\n\
+    gl_Position = world * vec4(position, 0.0, 1.0);\n\
+    }";
 
-        ctx.PopMatrix();
+static FS_SRC: &'static str = "#version 120\n\
+    uniform vec4 colour;\n\
+    void main() {\n\
+       gl_FragColor = colour;\n\
+    }";
+
+//shader helper functions based on https://gist.github.com/simias/c140d1479ada4d6218c0
+fn compile_shader(ctx: &gl::Gl, src: &str, shader_type: gl::types::GLenum) -> gl::types::GLuint {
+    let shader;
+    unsafe {
+        shader = ctx.CreateShader(shader_type);
+        // Attempt to compile the shader
+        let c_str = CString::new(src.as_bytes()).unwrap();
+        ctx.ShaderSource(shader, 1, &c_str.as_ptr(), std::ptr::null());
+        ctx.CompileShader(shader);
+
+        // Get the compile status
+        let mut status = gl::FALSE as gl::types::GLint;
+        ctx.GetShaderiv(shader, gl::COMPILE_STATUS, &mut status);
+
+        // Fail on error
+        if status != (gl::TRUE as gl::types::GLint) {
+            let mut buffer = [0u8; 512];
+            let mut length: i32 = 0;
+            ctx.GetShaderInfoLog(
+                shader,
+                buffer.len() as i32,
+                &mut length,
+                buffer.as_mut_ptr() as *mut i8,
+            );
+            panic!(
+                "Compiler log (length: {}):\n{}",
+                length,
+                std::str::from_utf8(
+                    std::ffi::CStr::from_ptr(std::mem::transmute(&buffer)).to_bytes(),
+                ).unwrap()
+            );
+        }
+    }
+    shader
+}
+
+fn link_program(ctx: &gl::Gl, vs: gl::types::GLuint, fs: gl::types::GLuint) -> gl::types::GLuint {
+    unsafe {
+        let program = ctx.CreateProgram();
+        ctx.AttachShader(program, vs);
+        ctx.AttachShader(program, fs);
+        ctx.LinkProgram(program);
+        // Get the link status
+        let mut status = gl::FALSE as gl::types::GLint;
+        ctx.GetProgramiv(program, gl::LINK_STATUS, &mut status);
+
+        // Fail on error
+        if status != (gl::TRUE as gl::types::GLint) {
+            let mut buffer = [0u8; 512];
+            let mut length: i32 = 0;
+            ctx.GetProgramInfoLog(
+                program,
+                buffer.len() as i32,
+                &mut length,
+                buffer.as_mut_ptr() as *mut i8,
+            );
+            panic!(
+                "Compiler log (length: {}):\n{}",
+                length,
+                std::str::from_utf8(
+                    std::ffi::CStr::from_ptr(std::mem::transmute(&buffer)).to_bytes(),
+                ).unwrap()
+            );
+        }
+        program
     }
 }
 
