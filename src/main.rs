@@ -59,22 +59,83 @@ fn main() {
 
         ctx.MatrixMode(gl::MODELVIEW);
         ctx.LoadIdentity();
+
+        ctx.ClearColor(0.0, 0.0, 0.0, 1.0);
+        ctx.Enable(gl::BLEND);
+        ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
     }
 
+    let mut world_matrix: [f32; 16] = [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ];
+
+    let verts: Vec<f32> = get_verts();
+
+    let mut event_pump = sdl_context.event_pump().unwrap();
+
+    'running: loop {
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::Quit { .. } |
+                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Escape), .. } |
+                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F10), .. } => {
+                    break 'running;
+                }
+                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Left), .. } => {
+                    world_matrix[12] -= 0.1;
+                }
+                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Right), .. } => {
+                    world_matrix[12] += 0.1;
+                }
+                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Down), .. } => {
+                    world_matrix[13] -= 0.1;
+                }
+                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Up), .. } => {
+                    world_matrix[13] += 0.1;
+                }
+                _ => {}
+            }
+        }
+
+        draw_frame(&ctx, &world_matrix, &verts);
+
+        window.gl_swap_window();
+
+        std::thread::sleep(std::time::Duration::from_millis(8));
+    }
+}
+
+fn draw_frame(ctx: &gl::Gl, world_matrix: &[f32; 16], verts: &Vec<f32>) {
     unsafe {
-        ctx.ClearColor(0.0, 0.0, 0.0, 1.0);
         ctx.Clear(
             gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
         );
-        ctx.Enable(gl::BLEND);
-        ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
 
         ctx.Clear(gl::STENCIL_BUFFER_BIT);
 
-        let verts: Vec<f32> = get_verts();
 
         ctx.EnableClientState(gl::VERTEX_ARRAY);
         ctx.VertexPointer(2, gl::FLOAT, 0, std::mem::transmute(verts.as_ptr()));
+
+        ctx.MatrixMode(gl::MODELVIEW);
+        ctx.PushMatrix();
+
+        ctx.MultMatrixf(world_matrix.as_ptr());
 
         let cnt = (verts.len() / 2) as _;
 
@@ -98,25 +159,7 @@ fn main() {
         ctx.Color4f(128.0 / 255.0, 128.0 / 255.0, 32.0 / 255.0, 1.0);
         ctx.DrawArrays(gl::LINE_STRIP, 0, cnt);
 
-    }
-
-    let mut event_pump = sdl_context.event_pump().unwrap();
-
-    'running: loop {
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. } |
-                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Escape), .. } |
-                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F10), .. } => {
-                    break 'running;
-                }
-                _ => {}
-            }
-        }
-
-        window.gl_swap_window();
-
-        std::thread::sleep(std::time::Duration::from_millis(8));
+        ctx.PopMatrix();
     }
 }
 
