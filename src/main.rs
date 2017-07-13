@@ -94,6 +94,10 @@ fn main() {
         ctx.DrawArrays(gl::TRIANGLE_FAN, 0, cnt);
         ctx.Disable(gl::STENCIL_TEST);
 
+        //outline
+        ctx.Color4f(128.0 / 255.0, 128.0 / 255.0, 32.0 / 255.0, 1.0);
+        ctx.DrawArrays(gl::LINE_STRIP, 0, cnt);
+
     }
 
     let mut event_pump = sdl_context.event_pump().unwrap();
