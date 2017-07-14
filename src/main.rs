@@ -92,7 +92,8 @@ fn main() {
         1.0,
     ];
 
-    let verts: Vec<f32> = get_verts();
+    let (verts, vert_ranges): (Vec<f32>, Vec<(usize, usize)>) =
+        get_verts_and_ranges(get_vert_vecs());
 
     let vertex_buffer = unsafe {
         let mut buffer = 0;
@@ -126,29 +127,19 @@ fn main() {
 
         buffer
     };
-    unsafe {
+
+    let pos_attr = unsafe {
         ctx.UseProgram(program);
 
-        let pos_attr = ctx.GetAttribLocation(program, CString::new("position").unwrap().as_ptr());
-
-        ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
-        ctx.EnableVertexAttribArray(pos_attr as _);
-        ctx.VertexAttribPointer(
-            pos_attr as _,
-            2,
-            gl::FLOAT,
-            gl::FALSE as _,
-            0,
-            std::ptr::null(),
-        )
-
-    }
+        ctx.GetAttribLocation(program, CString::new("position").unwrap().as_ptr())
+    };
     let world_attr =
         unsafe { ctx.GetUniformLocation(program, CString::new("world").unwrap().as_ptr()) };
 
     let colour_uniform =
         unsafe { ctx.GetUniformLocation(program, CString::new("colour").unwrap().as_ptr()) };
 
+    let mut range_index = 0;
     let mut event_pump = sdl_context.event_pump().unwrap();
 
     'running: loop {
@@ -171,6 +162,9 @@ fn main() {
                 Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Up), .. } => {
                     world_matrix[13] += 0.1;
                 }
+                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Space), .. } => {
+                    range_index = if range_index == 0 { 1 } else { 0 };
+                }
                 _ => {}
             }
         }
@@ -179,7 +173,16 @@ fn main() {
             ctx.UniformMatrix4fv(world_attr as _, 1, gl::FALSE, world_matrix.as_ptr() as _);
         }
 
-        draw_frame(&ctx, (verts.len() / 2) as _, colour_uniform);
+        let (start, end) = vert_ranges[range_index];
+
+        draw_frame(
+            &ctx,
+            (start) as _,
+            ((end + 1 - start) / 2) as _,
+            vertex_buffer,
+            pos_attr,
+            colour_uniform,
+        );
 
         if cfg!(debug_assertions) {
             let mut err;
@@ -202,8 +205,26 @@ fn main() {
     }
 }
 
-fn draw_frame(ctx: &gl::Gl, vert_count: gl::types::GLsizei, colour_uniform: gl::types::GLint) {
+fn draw_frame(
+    ctx: &gl::Gl,
+    start: isize,
+    vert_count: gl::types::GLsizei,
+    vertex_buffer: gl::types::GLuint,
+    pos_attr: gl::types::GLsizei,
+    colour_uniform: gl::types::GLint,
+) {
     unsafe {
+        ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
+        ctx.EnableVertexAttribArray(pos_attr as _);
+        ctx.VertexAttribPointer(
+            pos_attr as _,
+            2,
+            gl::FLOAT,
+            gl::FALSE as _,
+            0,
+            std::ptr::null().offset(start * std::mem::size_of::<f32>() as isize),
+        );
+
         ctx.Clear(
             gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
         );
@@ -325,30 +346,63 @@ fn link_program(ctx: &gl::Gl, vs: gl::types::GLuint, fs: gl::types::GLuint) -> g
     }
 }
 
+fn get_verts_and_ranges(mut vert_vecs: Vec<Vec<f32>>) -> (Vec<f32>, Vec<(usize, usize)>) {
+    let mut verts = Vec::new();
+    let mut ranges = Vec::new();
+
+    let mut start = 0;
+
+    for mut vec in vert_vecs.iter_mut() {
+        let end = start + vec.len() - 1;
+        println!("{:?}", (start, end));
+        ranges.push((start, end));
+
+        start = end + 1;
+
+        verts.append(&mut vec);
+    }
+
+    (verts, ranges)
+}
+
 #[cfg_attr(rustfmt, rustfmt_skip)]
-fn get_verts() -> Vec<f32> {
+fn get_vert_vecs() -> Vec<Vec<f32>> {
     vec![
-        -0.012640, 0.255336,
-        0.152259, 0.386185,
-        0.223982, 0.275978,
-        0.191749, 0.169082,
-        0.396864, 0.121742,
-        0.355419, -0.003047,
-        0.251747, -0.044495,
-        0.342622, -0.234376,
-        0.219218, -0.279777,
-        0.122174, -0.224565,
-        0.030379, -0.414003,
-        -0.082058, -0.345830,
-        -0.099398, -0.235534,
-        -0.304740, -0.281878,
-        -0.321543, -0.151465,
-        -0.246122, -0.069141,
-        -0.410383, 0.062507,
-        -0.318899, 0.156955,
-        -0.207511, 0.149317,
-        -0.207000, 0.359823,
-        -0.076118, 0.347186,
-        -0.012640, 0.255336,
+        // 7 point star
+        vec![
+            -0.012640, 0.255336,
+            0.152259, 0.386185,
+            0.223982, 0.275978,
+            0.191749, 0.169082,
+            0.396864, 0.121742,
+            0.355419, -0.003047,
+            0.251747, -0.044495,
+            0.342622, -0.234376,
+            0.219218, -0.279777,
+            0.122174, -0.224565,
+            0.030379, -0.414003,
+            -0.082058, -0.345830,
+            -0.099398, -0.235534,
+            -0.304740, -0.281878,
+            -0.321543, -0.151465,
+            -0.246122, -0.069141,
+            -0.410383, 0.062507,
+            -0.318899, 0.156955,
+            -0.207511, 0.149317,
+            -0.207000, 0.359823,
+            -0.076118, 0.347186,
+            -0.012640, 0.255336,
+        ],
+        // heptagon
+        vec![
+            0.555765, -0.002168,
+            0.344819, -0.435866,
+            -0.125783, -0.541348,
+            -0.501668, -0.239184,
+            -0.499786, 0.243091,
+            -0.121556, 0.542313,
+            0.348209, 0.433163,
+            0.555765, -0.002168,
+        ]
     ]
 }
