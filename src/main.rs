@@ -140,9 +140,15 @@ fn main() {
         unsafe { ctx.GetUniformLocation(program, CString::new("colour").unwrap().as_ptr()) };
 
     let mut range_index = 0;
+    let mut offset: usize = 0;
     let mut event_pump = sdl_context.event_pump().unwrap();
 
+    let (max_start, max_end) = *vert_ranges.last().unwrap();
+    let vert_ranges_len = vert_ranges.len();
+
     'running: loop {
+        let (mut start, mut end) = vert_ranges[range_index];
+
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } |
@@ -163,7 +169,20 @@ fn main() {
                     world_matrix[13] += 0.1;
                 }
                 Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Space), .. } => {
-                    range_index = if range_index == 0 { 1 } else { 0 };
+                    range_index = if range_index < vert_ranges_len - 1 {
+                        range_index + 1
+                    } else {
+                        0
+                    };
+                    offset = 0;
+                }
+                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::A), .. } => {
+                    offset = offset.saturating_sub(2);
+                    println!("{}", offset);
+                }
+                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::D), .. } => {
+                    offset = std::cmp::min(offset + 2, max_start - start);
+                    println!("{}", offset);
                 }
                 _ => {}
             }
@@ -173,7 +192,8 @@ fn main() {
             ctx.UniformMatrix4fv(world_attr as _, 1, gl::FALSE, world_matrix.as_ptr() as _);
         }
 
-        let (start, end) = vert_ranges[range_index];
+        start = std::cmp::min(start + offset, max_start);
+        end = std::cmp::min(end + offset, max_end);
 
         draw_frame(
             &ctx,
@@ -368,7 +388,7 @@ fn get_verts_and_ranges(mut vert_vecs: Vec<Vec<f32>>) -> (Vec<f32>, Vec<(usize, 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 fn get_vert_vecs() -> Vec<Vec<f32>> {
     vec![
-        // 7 point star
+        // star heptagon
         vec![
             -0.012640, 0.255336,
             0.152259, 0.386185,
@@ -403,6 +423,37 @@ fn get_vert_vecs() -> Vec<Vec<f32>> {
             -0.121556, 0.542313,
             0.348209, 0.433163,
             0.555765, -0.002168,
-        ]
+        ],
+        // star hexagon
+        vec![
+            0.267355, 0.153145,
+            0.158858, 0.062321,
+            0.357493, -0.060252,
+            0.266305, -0.154964,
+            0.133401, -0.106415,
+            0.126567, -0.339724,
+            -0.001050, -0.308109,
+            -0.025457, -0.168736,
+            -0.230926, -0.279472,
+            -0.267355, -0.153145,
+            -0.158858, -0.062321,
+            -0.357493, 0.060252,
+            -0.266305, 0.154964,
+            -0.133401, 0.106415,
+            -0.126567, 0.339724,
+            0.001050, 0.308109,
+            0.025457, 0.168736,
+            0.230926, 0.279472,
+            0.267355, 0.153145,
+        ],
+        vec![
+        0.002000, -0.439500,
+        -0.379618, -0.221482,
+        -0.381618, 0.218018,
+        -0.002000, 0.439500,
+        0.379618, 0.221482,
+        0.381618, -0.218018,
+        0.002000, -0.439500,
+        ],
     ]
 }
