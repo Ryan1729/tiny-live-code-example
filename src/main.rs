@@ -15,7 +15,6 @@ use open_gl_bindings::gl;
 
 use sdl2::event::Event;
 
-use std::ffi::CStr;
 use std::ffi::CString;
 use std::str;
 
@@ -196,7 +195,7 @@ impl Resources {
         let indices: Vec<gl::types::GLushort> =
             (0..verts.len()).map(|x| x as gl::types::GLushort).collect();
 
-        let index_buffer = unsafe {
+        unsafe {
             let mut buffer = 0;
 
             self.ctx.GenBuffers(1, &mut buffer as _);
@@ -344,7 +343,7 @@ fn draw_poly_with_matrix(world_matrix: [f32; 16], index: usize) {
             );
         }
 
-        let (mut start, mut end) = resources.vert_ranges[index];
+        let (start, end) = resources.vert_ranges[index];
 
         draw_verts_with_outline(
             &resources.ctx,
