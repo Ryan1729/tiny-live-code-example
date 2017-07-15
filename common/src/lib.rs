@@ -4,12 +4,20 @@ use rand::StdRng;
 
 pub struct Platform {
     pub draw_poly: fn(f32, f32, usize),
+    pub draw_poly_with_matrix: fn([f32; 16], usize),
     pub set_verts: fn(Vec<Vec<f32>>),
 }
 
 pub struct State {
     pub rng: StdRng,
-    pub polys: Vec<(f32, f32, usize)>,
+    pub polys: Vec<Polygon>,
+}
+
+pub struct Polygon {
+    pub x: f32,
+    pub y: f32,
+    pub index: usize,
+    pub scale: f32,
 }
 
 #[derive(Debug)]

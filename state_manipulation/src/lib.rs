@@ -57,25 +57,50 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             Event::KeyDown(Keycode::Space) => {
                 add_random_poly(state);
             }
+            Event::KeyDown(Keycode::R) => {
+                state.polys.clear();
+                add_random_poly(state);
+            }
             _ => {}
         }
     }
 
     // (p.set_verts)(get_vert_vecs());
 
-    for &(x, y, poly) in state.polys.iter() {
-        (p.draw_poly)(x, y, poly);
+    for poly in state.polys.iter() {
+        let matrix = [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            poly.x,
+            poly.y,
+            0.0,
+            1.0 / poly.scale,
+        ];
+        (p.draw_poly_with_matrix)(matrix, poly.index);
     }
 
     false
 }
 
 fn add_random_poly(state: &mut State) {
-    state.polys.push((
-        state.rng.gen_range(-9.0, 10.0) as f32 / 10.0,
-        state.rng.gen_range(-9.0, 10.0) as f32 / 10.0,
-        state.rng.gen_range(0, 4),
-    ));
+    let poly = Polygon {
+        x: state.rng.gen_range(-9.0, 10.0) / 10.0,
+        y: state.rng.gen_range(-9.0, 10.0) / 10.0,
+        index: state.rng.gen_range(0, 4),
+        scale: state.rng.gen_range(0.0, 2.0),
+    };
+
+    state.polys.push(poly);
 }
 
 //These are the verticies of the polygons which can be drawn.

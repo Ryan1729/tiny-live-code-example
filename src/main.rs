@@ -257,6 +257,7 @@ fn main() {
 
     let platform = Platform {
         draw_poly,
+        draw_poly_with_matrix,
         set_verts,
     };
 
@@ -332,31 +333,8 @@ fn main() {
 
 }
 
-fn draw_poly(x: f32, y: f32, index: usize) {
+fn draw_poly_with_matrix(world_matrix: [f32; 16], index: usize) {
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
-
-        let mut world_matrix: [f32; 16] = [
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-        ];
-
-        world_matrix[12] = x;
-        world_matrix[13] = y;
-
         unsafe {
             resources.ctx.UniformMatrix4fv(
                 resources.world_attr as _,
@@ -377,6 +355,32 @@ fn draw_poly(x: f32, y: f32, index: usize) {
             resources.colour_uniform,
         );
     }
+}
+
+fn draw_poly(x: f32, y: f32, index: usize) {
+    let mut world_matrix: [f32; 16] = [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ];
+
+    world_matrix[12] = x;
+    world_matrix[13] = y;
+
+    draw_poly_with_matrix(world_matrix, index);
 }
 
 fn set_verts(vert_vecs: Vec<Vec<f32>>) {
