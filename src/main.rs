@@ -1,6 +1,16 @@
 extern crate open_gl_bindings;
 extern crate sdl2;
 
+extern crate common;
+
+#[cfg(debug_assertions)]
+extern crate libloading;
+#[cfg(not(debug_assertions))]
+extern crate state_manipulation;
+
+#[cfg(debug_assertions)]
+use libloading::Library;
+
 use open_gl_bindings::gl;
 
 use sdl2::event::Event;
@@ -9,6 +19,76 @@ use std::ffi::CStr;
 use std::ffi::CString;
 use std::str;
 
+use common::*;
+
+#[cfg(debug_assertions)]
+const LIB_PATH: &'static str = "./target/debug/libstate_manipulation.so";
+#[cfg(not(debug_assertions))]
+const LIB_PATH: &'static str = "Hopefully compiled out";
+
+#[cfg(debug_assertions)]
+struct Application {
+    library: Library,
+}
+#[cfg(not(debug_assertions))]
+struct Application {}
+
+#[cfg(debug_assertions)]
+impl Application {
+    fn new() -> Self {
+        let library = Library::new(LIB_PATH).unwrap_or_else(|error| panic!("{}", error));
+
+        Application { library: library }
+    }
+
+    fn new_state(&self) -> State {
+        unsafe {
+            let f = self.library.get::<fn() -> State>(b"new_state\0").unwrap();
+
+            f()
+        }
+    }
+
+    fn update_and_render(
+        &self,
+        platform: &Platform,
+        state: &mut State,
+        events: &Vec<Event>,
+    ) -> bool {
+        unsafe {
+            let f = self.library
+                .get::<fn(&Platform, &mut State, &Vec<Event>) -> bool>(b"update_and_render\0")
+                .unwrap();
+            f(platform, state, events)
+        }
+    }
+}
+#[cfg(not(debug_assertions))]
+impl Application {
+    fn new() -> Self {
+        Application {}
+    }
+
+    fn new_state(&self) -> State {
+        state_manipulation::new_state()
+    }
+
+    fn update_and_render(
+        &self,
+        platform: &Platform,
+        state: &mut State,
+        events: &Vec<Event>,
+    ) -> bool {
+        let mut new_events: Vec<common::Event> = unsafe {
+            events
+                .iter()
+                .map(|a| mem::transmute::<Event, common::Event>(*a))
+                .collect()
+        };
+        state_manipulation::update_and_render(platform, state, &mut new_events)
+    }
+}
+
 fn find_sdl_gl_driver() -> Option<u32> {
     for (index, item) in sdl2::render::drivers().enumerate() {
         if item.name == "opengl" {
@@ -16,6 +96,101 @@ fn find_sdl_gl_driver() -> Option<u32> {
         }
     }
     None
+}
+
+type Ranges = [(u16, u16); 16];
+
+static mut RESOURCES: Option<Resources> = None;
+
+struct Resources {
+    ctx: gl::Gl,
+    vertex_buffer: gl::types::GLuint,
+    pos_attr: gl::types::GLsizei,
+    world_attr: gl::types::GLsizei,
+    colour_uniform: gl::types::GLint,
+    vert_ranges_len: usize,
+    vert_ranges: Ranges,
+}
+
+impl Resources {
+    fn new(ctx: gl::Gl, (width, height): (u32, u32)) -> Option<Self> {
+        unsafe {
+            ctx.Viewport(0, 0, width as _, height as _);
+
+            ctx.MatrixMode(gl::PROJECTION);
+            ctx.LoadIdentity();
+
+            ctx.MatrixMode(gl::MODELVIEW);
+            ctx.LoadIdentity();
+
+            ctx.ClearColor(0.0, 0.0, 0.0, 1.0);
+            ctx.Enable(gl::BLEND);
+            ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+
+        }
+
+        let vs = compile_shader(&ctx, VS_SRC, gl::VERTEX_SHADER);
+
+        let fs = compile_shader(&ctx, FS_SRC, gl::FRAGMENT_SHADER);
+
+        let program = link_program(&ctx, vs, fs);
+
+        let (verts, vert_ranges, vert_ranges_len) = get_verts_and_ranges(get_vert_vecs());
+
+        let vertex_buffer = unsafe {
+            let mut buffer = 0;
+
+            ctx.GenBuffers(1, &mut buffer as _);
+            ctx.BindBuffer(gl::ARRAY_BUFFER, buffer);
+            ctx.BufferData(
+                gl::ARRAY_BUFFER,
+                (verts.len() * std::mem::size_of::<f32>()) as _,
+                std::mem::transmute(verts.as_ptr()),
+                gl::DYNAMIC_DRAW,
+            );
+
+            buffer
+        };
+
+        let indices: Vec<gl::types::GLushort> =
+            (0..verts.len()).map(|x| x as gl::types::GLushort).collect();
+
+        let index_buffer = unsafe {
+            let mut buffer = 0;
+
+            ctx.GenBuffers(1, &mut buffer as _);
+            ctx.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
+            ctx.BufferData(
+                gl::ELEMENT_ARRAY_BUFFER,
+                (indices.len() * std::mem::size_of::<gl::types::GLushort>()) as _,
+                std::mem::transmute(indices.as_ptr()),
+                gl::DYNAMIC_DRAW,
+            );
+
+            buffer
+        };
+
+        let pos_attr = unsafe {
+            ctx.UseProgram(program);
+
+            ctx.GetAttribLocation(program, CString::new("position").unwrap().as_ptr())
+        };
+        let world_attr =
+            unsafe { ctx.GetUniformLocation(program, CString::new("world").unwrap().as_ptr()) };
+
+        let colour_uniform =
+            unsafe { ctx.GetUniformLocation(program, CString::new("colour").unwrap().as_ptr()) };
+
+        Some(Resources {
+            ctx,
+            vert_ranges,
+            vert_ranges_len,
+            vertex_buffer,
+            pos_attr,
+            world_attr,
+            colour_uniform,
+        })
+    }
 }
 
 fn main() {
@@ -37,193 +212,191 @@ fn main() {
         .build()
         .unwrap();
 
-    let ctx = gl::Gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
-    canvas.window().gl_set_context_to_current().unwrap();
-
-    let char_ptr = unsafe { ctx.GetString(gl::VERSION) };
-    let c_str: &CStr = unsafe { CStr::from_ptr(std::mem::transmute(char_ptr)) };
-    let buf: &[u8] = c_str.to_bytes();
-    let str_slice: &str = str::from_utf8(buf).unwrap();
-    let version: String = str_slice.to_owned();
-
-    println!("OpenGL version: {}", version);
-
-    let window = canvas.window();
-
-    let (width, height) = window.drawable_size();
-
     unsafe {
-        ctx.Viewport(0, 0, width as _, height as _);
+        let ctx = gl::Gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
+        canvas.window().gl_set_context_to_current().unwrap();
 
-        ctx.MatrixMode(gl::PROJECTION);
-        ctx.LoadIdentity();
+        RESOURCES = Resources::new(ctx, canvas.window().drawable_size())
+    }
+    // let mut app = Application::new();
 
-        ctx.MatrixMode(gl::MODELVIEW);
-        ctx.LoadIdentity();
+    // let mut state = app.new_state(size());
+    //
+    // let mut last_modified = if cfg!(debug_assertions) {
+    //     std::fs::metadata(LIB_PATH).unwrap().modified().unwrap()
+    // } else {
+    //     //hopefully this is actually compiled out
+    //     std::time::SystemTime::now()
+    // };
+    //
+    //
+    // let platform = Platform {
+    //     draw_poly,
+    // };
+    //
+    // //if this isn't set to something explicitly `get_foreground`
+    // //will return 0 (transparent black) messing up code that
+    // //reads the foreground then sets a different one then sets
+    // // it back to what it was before.
+    // set_foreground(common::Color {
+    //     red: 255,
+    //     green: 255,
+    //     blue: 255,
+    //     alpha: 255,
+    // });
+    //
+    //
+    // let mut events = Vec::new();
+    //
+    // app.update_and_render(&platform, &mut state, &mut events);
+    //
+    // terminal::refresh();
+    //
+    // loop {
+    //     events.clear();
+    //
+    //     while let Some(event) = terminal::read_event() {
+    //         events.push(event);
+    //     }
+    //
+    //     terminal::clear(None);
+    //
+    //     if app.update_and_render(&platform, &mut state, &mut events) {
+    //         //quit requested
+    //         break;
+    //     }
+    //
+    //     terminal::refresh();
+    //
+    //     if cfg!(debug_assertions) {
+    //         if let Ok(Ok(modified)) = std::fs::metadata(LIB_PATH).map(|m| m.modified()) {
+    //             if modified > last_modified {
+    //                 drop(app);
+    //                 app = Application::new();
+    //                 last_modified = modified;
+    //             }
+    //         }
+    //     }
+    //
+    // }
 
-        ctx.ClearColor(0.0, 0.0, 0.0, 1.0);
-        ctx.Enable(gl::BLEND);
-        ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+    if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
+        let window = canvas.window();
 
+        let (max_start, max_end) = resources.vert_ranges[resources.vert_ranges_len - 1];
+
+        let mut world_matrix: [f32; 16] = [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ];
+
+        let mut range_index = 0;
+        let mut offset: u16 = 0;
+        let mut event_pump = sdl_context.event_pump().unwrap();
+
+        'running: loop {
+            let (mut start, mut end) = resources.vert_ranges[range_index];
+
+            for event in event_pump.poll_iter() {
+                match event {
+                    Event::Quit { .. } |
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Escape), .. } |
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F10), .. } => {
+                        break 'running;
+                    }
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Left), .. } => {
+                        world_matrix[12] -= 0.1;
+                    }
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Right), .. } => {
+                        world_matrix[12] += 0.1;
+                    }
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Down), .. } => {
+                        world_matrix[13] -= 0.1;
+                    }
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Up), .. } => {
+                        world_matrix[13] += 0.1;
+                    }
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Space), .. } => {
+                        range_index = if range_index < resources.vert_ranges_len - 1 {
+                            range_index + 1
+                        } else {
+                            0
+                        };
+                        offset = 0;
+                    }
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::A), .. } => {
+                        offset = offset.saturating_sub(2);
+                        println!("{}", offset);
+                    }
+                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::D), .. } => {
+                        offset = std::cmp::min(offset + 2, (max_start - start) as _);
+                        println!("{}", offset);
+                    }
+                    _ => {}
+                }
+            }
+
+            unsafe {
+                resources.ctx.UniformMatrix4fv(
+                    resources.world_attr as _,
+                    1,
+                    gl::FALSE,
+                    world_matrix.as_ptr() as _,
+                );
+            }
+
+            start = std::cmp::min(start + offset, max_start);
+            end = std::cmp::min(end + offset, max_end);
+
+            draw_frame(
+                &resources.ctx,
+                (start) as _,
+                ((end + 1 - start) / 2) as _,
+                resources.vertex_buffer,
+                resources.pos_attr,
+                resources.colour_uniform,
+            );
+
+            if cfg!(debug_assertions) {
+                let mut err;
+                while {
+                    err = unsafe { resources.ctx.GetError() };
+                    err != gl::NO_ERROR
+                }
+                {
+                    println!("OpenGL error: {}", err);
+                }
+                if err != gl::NO_ERROR {
+                    panic!();
+                }
+
+            }
+
+            window.gl_swap_window();
+
+            std::thread::sleep(std::time::Duration::from_millis(8));
+        }
+    } else {
+        //TODO make GLOBALs a Result and display the error.
+        println!("Could not open window.");
     }
 
-    let vs = compile_shader(&ctx, VS_SRC, gl::VERTEX_SHADER);
-
-    let fs = compile_shader(&ctx, FS_SRC, gl::FRAGMENT_SHADER);
-
-    let program = link_program(&ctx, vs, fs);
-
-    let mut world_matrix: [f32; 16] = [
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        1.0,
-    ];
-
-    let (verts, vert_ranges): (Vec<f32>, Vec<(usize, usize)>) =
-        get_verts_and_ranges(get_vert_vecs());
-
-    let vertex_buffer = unsafe {
-        let mut buffer = 0;
-
-        ctx.GenBuffers(1, &mut buffer as _);
-        ctx.BindBuffer(gl::ARRAY_BUFFER, buffer);
-        ctx.BufferData(
-            gl::ARRAY_BUFFER,
-            (verts.len() * std::mem::size_of::<f32>()) as _,
-            std::mem::transmute(verts.as_ptr()),
-            gl::DYNAMIC_DRAW,
-        );
-
-        buffer
-    };
-
-    let indices: Vec<gl::types::GLushort> =
-        (0..verts.len()).map(|x| x as gl::types::GLushort).collect();
-
-    let index_buffer = unsafe {
-        let mut buffer = 0;
-
-        ctx.GenBuffers(1, &mut buffer as _);
-        ctx.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
-        ctx.BufferData(
-            gl::ELEMENT_ARRAY_BUFFER,
-            (indices.len() * std::mem::size_of::<gl::types::GLushort>()) as _,
-            std::mem::transmute(indices.as_ptr()),
-            gl::DYNAMIC_DRAW,
-        );
-
-        buffer
-    };
-
-    let pos_attr = unsafe {
-        ctx.UseProgram(program);
-
-        ctx.GetAttribLocation(program, CString::new("position").unwrap().as_ptr())
-    };
-    let world_attr =
-        unsafe { ctx.GetUniformLocation(program, CString::new("world").unwrap().as_ptr()) };
-
-    let colour_uniform =
-        unsafe { ctx.GetUniformLocation(program, CString::new("colour").unwrap().as_ptr()) };
-
-    let mut range_index = 0;
-    let mut offset: usize = 0;
-    let mut event_pump = sdl_context.event_pump().unwrap();
-
-    let (max_start, max_end) = *vert_ranges.last().unwrap();
-    let vert_ranges_len = vert_ranges.len();
-
-    'running: loop {
-        let (mut start, mut end) = vert_ranges[range_index];
-
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. } |
-                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Escape), .. } |
-                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F10), .. } => {
-                    break 'running;
-                }
-                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Left), .. } => {
-                    world_matrix[12] -= 0.1;
-                }
-                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Right), .. } => {
-                    world_matrix[12] += 0.1;
-                }
-                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Down), .. } => {
-                    world_matrix[13] -= 0.1;
-                }
-                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Up), .. } => {
-                    world_matrix[13] += 0.1;
-                }
-                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Space), .. } => {
-                    range_index = if range_index < vert_ranges_len - 1 {
-                        range_index + 1
-                    } else {
-                        0
-                    };
-                    offset = 0;
-                }
-                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::A), .. } => {
-                    offset = offset.saturating_sub(2);
-                    println!("{}", offset);
-                }
-                Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::D), .. } => {
-                    offset = std::cmp::min(offset + 2, max_start - start);
-                    println!("{}", offset);
-                }
-                _ => {}
-            }
-        }
-
-        unsafe {
-            ctx.UniformMatrix4fv(world_attr as _, 1, gl::FALSE, world_matrix.as_ptr() as _);
-        }
-
-        start = std::cmp::min(start + offset, max_start);
-        end = std::cmp::min(end + offset, max_end);
-
-        draw_frame(
-            &ctx,
-            (start) as _,
-            ((end + 1 - start) / 2) as _,
-            vertex_buffer,
-            pos_attr,
-            colour_uniform,
-        );
-
-        if cfg!(debug_assertions) {
-            let mut err;
-            while {
-                err = unsafe { ctx.GetError() };
-                err != gl::NO_ERROR
-            }
-            {
-                println!("OpenGL error: {}", err);
-            }
-            if err != gl::NO_ERROR {
-                panic!();
-            }
-
-        }
-
-        window.gl_swap_window();
-
-        std::thread::sleep(std::time::Duration::from_millis(8));
-    }
 }
+
 
 fn draw_frame(
     ctx: &gl::Gl,
@@ -366,23 +539,25 @@ fn link_program(ctx: &gl::Gl, vs: gl::types::GLuint, fs: gl::types::GLuint) -> g
     }
 }
 
-fn get_verts_and_ranges(mut vert_vecs: Vec<Vec<f32>>) -> (Vec<f32>, Vec<(usize, usize)>) {
+fn get_verts_and_ranges(mut vert_vecs: Vec<Vec<f32>>) -> (Vec<f32>, Ranges, usize) {
     let mut verts = Vec::new();
-    let mut ranges = Vec::new();
+    let mut ranges = [(0, 0); 16];
+    let mut used_len = 0;
 
     let mut start = 0;
 
     for mut vec in vert_vecs.iter_mut() {
         let end = start + vec.len() - 1;
         println!("{:?}", (start, end));
-        ranges.push((start, end));
+        ranges[used_len] = (start as u16, end as u16);
 
         start = end + 1;
 
         verts.append(&mut vec);
+        used_len += 1;
     }
 
-    (verts, ranges)
+    (verts, ranges, used_len)
 }
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
