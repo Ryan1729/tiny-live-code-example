@@ -64,6 +64,16 @@ impl Application {
             f(platform, state, events)
         }
     }
+
+    fn get_vert_vecs(&self) -> Vec<Vec<f32>> {
+        unsafe {
+            let f = self.library
+                .get::<fn() -> Vec<Vec<f32>>>(b"get_vert_vecs\0")
+                .unwrap();
+
+            f()
+        }
+    }
 }
 #[cfg(not(debug_assertions))]
 impl Application {
@@ -82,6 +92,10 @@ impl Application {
         events: &mut Vec<common::Event>,
     ) -> bool {
         state_manipulation::update_and_render(platform, state, events)
+    }
+
+    fn get_vert_vecs(&self) -> Vec<Vec<f32>> {
+        state_manipulation::get_vert_vecs()
     }
 }
 
@@ -109,7 +123,7 @@ struct Resources {
 }
 
 impl Resources {
-    fn new(ctx: gl::Gl, (width, height): (u32, u32)) -> Option<Self> {
+    fn new(app: &Application, ctx: gl::Gl, (width, height): (u32, u32)) -> Option<Self> {
         unsafe {
             ctx.Viewport(0, 0, width as _, height as _);
 
@@ -131,41 +145,6 @@ impl Resources {
 
         let program = link_program(&ctx, vs, fs);
 
-        let (verts, vert_ranges, vert_ranges_len) = get_verts_and_ranges(get_vert_vecs());
-
-        let vertex_buffer = unsafe {
-            let mut buffer = 0;
-
-            ctx.GenBuffers(1, &mut buffer as _);
-            ctx.BindBuffer(gl::ARRAY_BUFFER, buffer);
-            ctx.BufferData(
-                gl::ARRAY_BUFFER,
-                (verts.len() * std::mem::size_of::<f32>()) as _,
-                std::mem::transmute(verts.as_ptr()),
-                gl::DYNAMIC_DRAW,
-            );
-
-            buffer
-        };
-
-        let indices: Vec<gl::types::GLushort> =
-            (0..verts.len()).map(|x| x as gl::types::GLushort).collect();
-
-        let index_buffer = unsafe {
-            let mut buffer = 0;
-
-            ctx.GenBuffers(1, &mut buffer as _);
-            ctx.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
-            ctx.BufferData(
-                gl::ELEMENT_ARRAY_BUFFER,
-                (indices.len() * std::mem::size_of::<gl::types::GLushort>()) as _,
-                std::mem::transmute(indices.as_ptr()),
-                gl::DYNAMIC_DRAW,
-            );
-
-            buffer
-        };
-
         let pos_attr = unsafe {
             ctx.UseProgram(program);
 
@@ -177,19 +156,70 @@ impl Resources {
         let colour_uniform =
             unsafe { ctx.GetUniformLocation(program, CString::new("colour").unwrap().as_ptr()) };
 
-        Some(Resources {
+        let mut result = Resources {
             ctx,
-            vert_ranges,
-            vert_ranges_len,
-            vertex_buffer,
+            vert_ranges: [(0, 0); 16],
+            vert_ranges_len: 0,
+            vertex_buffer: 0,
             pos_attr,
             world_attr,
             colour_uniform,
-        })
+        };
+
+        result.set_verts(app.get_vert_vecs());
+
+        Some(result)
+    }
+
+    fn set_verts(&mut self, vert_vecs: Vec<Vec<f32>>) {
+
+        let (verts, vert_ranges, vert_ranges_len) = get_verts_and_ranges(vert_vecs);
+
+        let vertex_buffer = unsafe {
+            let mut buffer = 0;
+
+            self.ctx.GenBuffers(1, &mut buffer as _);
+            self.ctx.BindBuffer(gl::ARRAY_BUFFER, buffer);
+            self.ctx.BufferData(
+                gl::ARRAY_BUFFER,
+                (verts.len() * std::mem::size_of::<f32>()) as _,
+                std::mem::transmute(verts.as_ptr()),
+                gl::DYNAMIC_DRAW,
+            );
+
+            buffer
+        };
+
+        //TODO (assuming we don't end up manipulating this at all)
+        // Does this need to be any longer than the longest single polygon?
+        // If not, is the extra GPU memory usage significant?
+        let indices: Vec<gl::types::GLushort> =
+            (0..verts.len()).map(|x| x as gl::types::GLushort).collect();
+
+        let index_buffer = unsafe {
+            let mut buffer = 0;
+
+            self.ctx.GenBuffers(1, &mut buffer as _);
+            self.ctx.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
+            self.ctx.BufferData(
+                gl::ELEMENT_ARRAY_BUFFER,
+                (indices.len() * std::mem::size_of::<gl::types::GLushort>()) as _,
+                std::mem::transmute(indices.as_ptr()),
+                gl::DYNAMIC_DRAW,
+            );
+
+            buffer
+        };
+
+        self.vert_ranges = vert_ranges;
+        self.vert_ranges_len = vert_ranges_len;
+        self.vertex_buffer = vertex_buffer;
     }
 }
 
 fn main() {
+    let mut app = Application::new();
+
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
@@ -212,9 +242,8 @@ fn main() {
         let ctx = gl::Gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
         canvas.window().gl_set_context_to_current().unwrap();
 
-        RESOURCES = Resources::new(ctx, canvas.window().drawable_size())
+        RESOURCES = Resources::new(&app, ctx, canvas.window().drawable_size())
     }
-    let mut app = Application::new();
 
     let mut state = app.new_state();
 
@@ -226,7 +255,10 @@ fn main() {
     };
 
 
-    let platform = Platform { draw_poly };
+    let platform = Platform {
+        draw_poly,
+        set_verts,
+    };
 
     let mut events = Vec::new();
 
@@ -301,7 +333,6 @@ fn main() {
 }
 
 fn draw_poly(x: f32, y: f32, index: usize) {
-
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
 
         let mut world_matrix: [f32; 16] = [
@@ -346,7 +377,12 @@ fn draw_poly(x: f32, y: f32, index: usize) {
             resources.colour_uniform,
         );
     }
+}
 
+fn set_verts(vert_vecs: Vec<Vec<f32>>) {
+    if let Some(ref mut resources) = unsafe { RESOURCES.as_mut() } {
+        resources.set_verts(vert_vecs);
+    }
 }
 
 fn draw_verts_with_outline(
@@ -505,77 +541,4 @@ fn get_verts_and_ranges(mut vert_vecs: Vec<Vec<f32>>) -> (Vec<f32>, Ranges, usiz
     }
 
     (verts, ranges, used_len)
-}
-
-#[cfg_attr(rustfmt, rustfmt_skip)]
-fn get_vert_vecs() -> Vec<Vec<f32>> {
-    vec![
-        // star heptagon
-        vec![
-            -0.012640, 0.255336,
-            0.152259, 0.386185,
-            0.223982, 0.275978,
-            0.191749, 0.169082,
-            0.396864, 0.121742,
-            0.355419, -0.003047,
-            0.251747, -0.044495,
-            0.342622, -0.234376,
-            0.219218, -0.279777,
-            0.122174, -0.224565,
-            0.030379, -0.414003,
-            -0.082058, -0.345830,
-            -0.099398, -0.235534,
-            -0.304740, -0.281878,
-            -0.321543, -0.151465,
-            -0.246122, -0.069141,
-            -0.410383, 0.062507,
-            -0.318899, 0.156955,
-            -0.207511, 0.149317,
-            -0.207000, 0.359823,
-            -0.076118, 0.347186,
-            -0.012640, 0.255336,
-        ],
-        // heptagon
-        vec![
-            0.555765, -0.002168,
-            0.344819, -0.435866,
-            -0.125783, -0.541348,
-            -0.501668, -0.239184,
-            -0.499786, 0.243091,
-            -0.121556, 0.542313,
-            0.348209, 0.433163,
-            0.555765, -0.002168,
-        ],
-        // star hexagon
-        vec![
-            0.267355, 0.153145,
-            0.158858, 0.062321,
-            0.357493, -0.060252,
-            0.266305, -0.154964,
-            0.133401, -0.106415,
-            0.126567, -0.339724,
-            -0.001050, -0.308109,
-            -0.025457, -0.168736,
-            -0.230926, -0.279472,
-            -0.267355, -0.153145,
-            -0.158858, -0.062321,
-            -0.357493, 0.060252,
-            -0.266305, 0.154964,
-            -0.133401, 0.106415,
-            -0.126567, 0.339724,
-            0.001050, 0.308109,
-            0.025457, 0.168736,
-            0.230926, 0.279472,
-            0.267355, 0.153145,
-        ],
-        vec![
-        0.002000, -0.439500,
-        -0.379618, -0.221482,
-        -0.381618, 0.218018,
-        -0.002000, 0.439500,
-        0.379618, 0.221482,
-        0.381618, -0.218018,
-        0.002000, -0.439500,
-        ],
-    ]
 }

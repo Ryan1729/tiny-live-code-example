@@ -4,6 +4,7 @@ use rand::StdRng;
 
 pub struct Platform {
     pub draw_poly: fn(f32, f32, usize),
+    pub set_verts: fn(Vec<Vec<f32>>),
 }
 
 pub struct State {
