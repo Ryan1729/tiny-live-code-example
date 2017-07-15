@@ -31,7 +31,10 @@ pub fn new_state() -> State {
 }
 
 fn make_state(mut rng: StdRng) -> State {
-    let mut state = State { rng, poly:Vec::new() };
+    let mut state = State {
+        rng,
+        polys: Vec::new(),
+    };
 
     add_random_poly(&mut state);
 
@@ -43,31 +46,32 @@ fn make_state(mut rng: StdRng) -> State {
 //returns true if quit requested
 pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event>) -> bool {
     for event in events {
-        Event::Quit { .. } |
-        Event::KeyDown { keycode: Some(Keycode::Escape), .. } |
-        Event::KeyDown { keycode: Some(Keycode::F10), .. } => {
-            return true;
-        }
-        Event::KeyDown { keycode: Some(Keycode::Space), .. } => {
-            add_random_poly(state);
+        println!("{:?}", *event);
+
+        match *event {
+            Event::Quit |
+            Event::KeyDown(Keycode::Escape) |
+            Event::KeyDown(Keycode::F10) => {
+                return true;
+            }
+            Event::KeyDown(Keycode::Space) => {
+                add_random_poly(state);
+            }
+            _ => {}
         }
     }
 
-    for (x,y,poly) in state.polys.iter() {
-        (p.draw_poly)(
-            state.rng.gen_range(-9, 10) as f32 / 10.0,
-            state.rng.gen_range(-9, 10) as f32 / 10.0,
-            state.rng.gen_range(0, 5),
-        );
+    for &(x, y, poly) in state.polys.iter() {
+        (p.draw_poly)(x, y, poly);
     }
 
     false
 }
 
 fn add_random_poly(state: &mut State) {
-    state.polys.push(
-        state.rng.gen_range(-9, 10) as f32 / 10.0,
-        state.rng.gen_range(-9, 10) as f32 / 10.0,
-        state.rng.gen_range(0, 5)
-    );
+    state.polys.push((
+        state.rng.gen_range(-9.0, 10.0) as f32 / 10.0,
+        state.rng.gen_range(-9.0, 10.0) as f32 / 10.0,
+        state.rng.gen_range(0, 4),
+    ));
 }

@@ -3,6 +3,9 @@ name = "sdl2-opengl-test"
 version = "0.1.0"
 authors = ["Ryan1729 <Ryan1729@gmail.com>"]
 
+#this is needed the state manipulation dynamic lib is put in the right place
+[workspace]
+
 [dependencies]
 sdl2 = "0.30"
 #TODO can this be a dev deependacy?
@@ -14,3 +17,6 @@ path = "./open_gl_bindings"
 
 [dependencies.common]
 path = "./common"
+
+[dependencies.state_manipulation]
+path = "./state_manipulation"

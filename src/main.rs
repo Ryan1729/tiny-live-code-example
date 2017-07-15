@@ -53,11 +53,13 @@ impl Application {
         &self,
         platform: &Platform,
         state: &mut State,
-        events: &Vec<Event>,
+        events: &Vec<common::Event>,
     ) -> bool {
         unsafe {
             let f = self.library
-                .get::<fn(&Platform, &mut State, &Vec<Event>) -> bool>(b"update_and_render\0")
+                .get::<fn(&Platform, &mut State, &Vec<common::Event>) -> bool>(
+                    b"update_and_render\0",
+                )
                 .unwrap();
             f(platform, state, events)
         }
@@ -77,15 +79,9 @@ impl Application {
         &self,
         platform: &Platform,
         state: &mut State,
-        events: &Vec<Event>,
+        events: &mut Vec<common::Event>,
     ) -> bool {
-        let mut new_events: Vec<common::Event> = unsafe {
-            events
-                .iter()
-                .map(|a| mem::transmute::<Event, common::Event>(*a))
-                .collect()
-        };
-        state_manipulation::update_and_render(platform, state, &mut new_events)
+        state_manipulation::update_and_render(platform, state, events)
     }
 }
 
@@ -218,158 +214,65 @@ fn main() {
 
         RESOURCES = Resources::new(ctx, canvas.window().drawable_size())
     }
-    // let mut app = Application::new();
+    let mut app = Application::new();
 
-    // let mut state = app.new_state(size());
-    //
-    // let mut last_modified = if cfg!(debug_assertions) {
-    //     std::fs::metadata(LIB_PATH).unwrap().modified().unwrap()
-    // } else {
-    //     //hopefully this is actually compiled out
-    //     std::time::SystemTime::now()
-    // };
-    //
-    //
-    // let platform = Platform {
-    //     draw_poly,
-    // };
-    //
-    // //if this isn't set to something explicitly `get_foreground`
-    // //will return 0 (transparent black) messing up code that
-    // //reads the foreground then sets a different one then sets
-    // // it back to what it was before.
-    // set_foreground(common::Color {
-    //     red: 255,
-    //     green: 255,
-    //     blue: 255,
-    //     alpha: 255,
-    // });
-    //
-    //
-    // let mut events = Vec::new();
-    //
-    // app.update_and_render(&platform, &mut state, &mut events);
-    //
-    // terminal::refresh();
-    //
-    // loop {
-    //     events.clear();
-    //
-    //     while let Some(event) = terminal::read_event() {
-    //         events.push(event);
-    //     }
-    //
-    //     terminal::clear(None);
-    //
-    //     if app.update_and_render(&platform, &mut state, &mut events) {
-    //         //quit requested
-    //         break;
-    //     }
-    //
-    //     terminal::refresh();
-    //
-    //     if cfg!(debug_assertions) {
-    //         if let Ok(Ok(modified)) = std::fs::metadata(LIB_PATH).map(|m| m.modified()) {
-    //             if modified > last_modified {
-    //                 drop(app);
-    //                 app = Application::new();
-    //                 last_modified = modified;
-    //             }
-    //         }
-    //     }
-    //
-    // }
+    let mut state = app.new_state();
+
+    let mut last_modified = if cfg!(debug_assertions) {
+        std::fs::metadata(LIB_PATH).unwrap().modified().unwrap()
+    } else {
+        //hopefully this is actually compiled out
+        std::time::SystemTime::now()
+    };
+
+
+    let platform = Platform { draw_poly };
+
+    let mut events = Vec::new();
+
+    app.update_and_render(&platform, &mut state, &mut events);
 
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         let window = canvas.window();
 
-        let (max_start, max_end) = resources.vert_ranges[resources.vert_ranges_len - 1];
-
-        let mut world_matrix: [f32; 16] = [
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-        ];
-
-        let mut range_index = 0;
-        let mut offset: u16 = 0;
         let mut event_pump = sdl_context.event_pump().unwrap();
 
-        'running: loop {
-            let (mut start, mut end) = resources.vert_ranges[range_index];
+        loop {
+            events.clear();
 
             for event in event_pump.poll_iter() {
                 match event {
-                    Event::Quit { .. } |
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Escape), .. } |
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::F10), .. } => {
-                        break 'running;
+                    Event::Quit { .. } => events.push(common::Event::Quit),
+                    Event::KeyDown { keycode: Some(kc), .. } => {
+                        events.push(common::Event::KeyDown(unsafe { std::mem::transmute(kc) }))
                     }
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Left), .. } => {
-                        world_matrix[12] -= 0.1;
-                    }
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Right), .. } => {
-                        world_matrix[12] += 0.1;
-                    }
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Down), .. } => {
-                        world_matrix[13] -= 0.1;
-                    }
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Up), .. } => {
-                        world_matrix[13] += 0.1;
-                    }
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::Space), .. } => {
-                        range_index = if range_index < resources.vert_ranges_len - 1 {
-                            range_index + 1
-                        } else {
-                            0
-                        };
-                        offset = 0;
-                    }
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::A), .. } => {
-                        offset = offset.saturating_sub(2);
-                        println!("{}", offset);
-                    }
-                    Event::KeyDown { keycode: Some(sdl2::keyboard::Keycode::D), .. } => {
-                        offset = std::cmp::min(offset + 2, (max_start - start) as _);
-                        println!("{}", offset);
+                    Event::KeyUp { keycode: Some(kc), .. } => {
+                        events.push(common::Event::KeyUp(unsafe { std::mem::transmute(kc) }))
                     }
                     _ => {}
                 }
             }
 
             unsafe {
-                resources.ctx.UniformMatrix4fv(
-                    resources.world_attr as _,
-                    1,
-                    gl::FALSE,
-                    world_matrix.as_ptr() as _,
+                resources.ctx.Clear(
+                    gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
                 );
             }
 
-            start = std::cmp::min(start + offset, max_start);
-            end = std::cmp::min(end + offset, max_end);
+            if app.update_and_render(&platform, &mut state, &mut events) {
+                //quit requested
+                break;
+            }
 
-            draw_frame(
-                &resources.ctx,
-                (start) as _,
-                ((end + 1 - start) / 2) as _,
-                resources.vertex_buffer,
-                resources.pos_attr,
-                resources.colour_uniform,
-            );
+            if cfg!(debug_assertions) {
+                if let Ok(Ok(modified)) = std::fs::metadata(LIB_PATH).map(|m| m.modified()) {
+                    if modified > last_modified {
+                        drop(app);
+                        app = Application::new();
+                        last_modified = modified;
+                    }
+                }
+            }
 
             if cfg!(debug_assertions) {
                 let mut err;
@@ -397,8 +300,56 @@ fn main() {
 
 }
 
+fn draw_poly(x: f32, y: f32, index: usize) {
 
-fn draw_frame(
+    if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
+
+        let mut world_matrix: [f32; 16] = [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ];
+
+        world_matrix[12] = x;
+        world_matrix[13] = y;
+
+        unsafe {
+            resources.ctx.UniformMatrix4fv(
+                resources.world_attr as _,
+                1,
+                gl::FALSE,
+                world_matrix.as_ptr() as _,
+            );
+        }
+
+        let (mut start, mut end) = resources.vert_ranges[index];
+
+        draw_verts_with_outline(
+            &resources.ctx,
+            start as _,
+            ((end + 1 - start) / 2) as _,
+            resources.vertex_buffer,
+            resources.pos_attr,
+            resources.colour_uniform,
+        );
+    }
+
+}
+
+fn draw_verts_with_outline(
     ctx: &gl::Gl,
     start: isize,
     vert_count: gl::types::GLsizei,
@@ -416,10 +367,6 @@ fn draw_frame(
             gl::FALSE as _,
             0,
             std::ptr::null().offset(start * std::mem::size_of::<f32>() as isize),
-        );
-
-        ctx.Clear(
-            gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
         );
 
         ctx.Clear(gl::STENCIL_BUFFER_BIT);
