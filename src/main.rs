@@ -448,7 +448,7 @@ static VS_SRC: &'static str = "#version 120\n\
     attribute vec2 position;\n\
     uniform mat4 world;\n\
     void main() {\n\
-    gl_Position = world * vec4(position, 0.0, 1.0);\n\
+    gl_Position = world * vec4(position, -1.0, 1.0);\n\
     }";
 
 static FS_SRC: &'static str = "#version 120\n\

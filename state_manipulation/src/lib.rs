@@ -2,6 +2,7 @@ extern crate rand;
 extern crate common;
 
 use common::*;
+use common::Projection::*;
 
 use rand::{StdRng, SeedableRng, Rng};
 
@@ -65,10 +66,27 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
     }
 
-    // (p.set_verts)(get_vert_vecs());
+    let top = 1.0;
+    let bottom = -1.0;
+    let left = -1.0;
+    let right = 1.0;
+    let near = 1.0;
+    let far = -1.0;
+
+
+    let projection = get_projection(&ProjectionSpec {
+        top,
+        bottom,
+        left,
+        right,
+        near,
+        far,
+        projection: Perspective,
+        // projection: Orthographic,
+    });
 
     for poly in state.polys.iter() {
-        let matrix = [
+        let world_matrix = [
             1.0,
             0.0,
             0.0,
@@ -84,8 +102,13 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             poly.x,
             poly.y,
             0.0,
+            // 1.0,
             1.0 / poly.scale,
         ];
+
+        let matrix = mat4x4_mul(&projection, &world_matrix);
+        // println!("{:?}", matrix);
+        // (p.draw_poly_with_matrix)(world_matrix, poly.index);
         (p.draw_poly_with_matrix)(matrix, poly.index);
     }
 
