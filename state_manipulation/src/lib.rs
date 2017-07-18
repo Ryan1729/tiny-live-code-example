@@ -35,6 +35,8 @@ fn make_state(mut rng: StdRng) -> State {
     let mut state = State {
         rng,
         polys: Vec::new(),
+        cam_x: 0.0,
+        cam_y: 0.0,
     };
 
     add_random_poly(&mut state);
@@ -62,6 +64,18 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 state.polys.clear();
                 add_random_poly(state);
             }
+            Event::KeyDown(Keycode::Up) => {
+                state.cam_y += 0.1;
+            }
+            Event::KeyDown(Keycode::Down) => {
+                state.cam_y -= 0.1;
+            }
+            Event::KeyDown(Keycode::Right) => {
+                state.cam_x += 0.1;
+            }
+            Event::KeyDown(Keycode::Left) => {
+                state.cam_x -= 0.1;
+            }
             _ => {}
         }
     }
@@ -73,7 +87,6 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
     let near = 1.0;
     let far = -1.0;
 
-
     let projection = get_projection(&ProjectionSpec {
         top,
         bottom,
@@ -84,6 +97,27 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         projection: Perspective,
         // projection: Orthographic,
     });
+
+    let camera = [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        state.cam_x,
+        state.cam_y,
+        0.0,
+        1.0,
+    ];
+
+    let view = mat4x4_mul(&projection, &camera);
 
     for poly in state.polys.iter() {
         let world_matrix = [
@@ -102,13 +136,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             poly.x,
             poly.y,
             0.0,
-            // 1.0,
-            1.0 / poly.scale,
+            1.0,
         ];
 
-        let matrix = mat4x4_mul(&projection, &world_matrix);
-        // println!("{:?}", matrix);
-        // (p.draw_poly_with_matrix)(world_matrix, poly.index);
+        let matrix = mat4x4_mul(&view, &world_matrix);
+
         (p.draw_poly_with_matrix)(matrix, poly.index);
     }
 
