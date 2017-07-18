@@ -13,6 +13,7 @@ pub struct State {
     pub polys: Vec<Polygon>,
     pub cam_x: f32,
     pub cam_y: f32,
+    pub zoom: f32,
 }
 
 pub struct Polygon {

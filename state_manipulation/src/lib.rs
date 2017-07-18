@@ -31,12 +31,13 @@ pub fn new_state() -> State {
     make_state(rng)
 }
 
-fn make_state(mut rng: StdRng) -> State {
+fn make_state(rng: StdRng) -> State {
     let mut state = State {
         rng,
         polys: Vec::new(),
         cam_x: 0.0,
         cam_y: 0.0,
+        zoom: 1.0,
     };
 
     add_random_poly(&mut state);
@@ -65,27 +66,41 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 add_random_poly(state);
             }
             Event::KeyDown(Keycode::Up) => {
-                state.cam_y += 0.1;
+                state.cam_y += 0.0625;
             }
             Event::KeyDown(Keycode::Down) => {
-                state.cam_y -= 0.1;
+                state.cam_y -= 0.0625;
             }
             Event::KeyDown(Keycode::Right) => {
-                state.cam_x += 0.1;
+                state.cam_x += 0.0625;
             }
             Event::KeyDown(Keycode::Left) => {
-                state.cam_x -= 0.1;
+                state.cam_x -= 0.0625;
+            }
+            Event::KeyDown(Keycode::Num0) => {
+                state.cam_x = 0.0;
+                state.cam_y = 0.0;
+                state.zoom = 1.0;
+            }
+            Event::KeyDown(Keycode::W) => {
+                state.zoom *= 1.25;
+            }
+            Event::KeyDown(Keycode::S) => {
+                state.zoom /= 1.25;
             }
             _ => {}
         }
     }
 
-    let top = 1.0;
-    let bottom = -1.0;
-    let left = -1.0;
-    let right = 1.0;
-    let near = 1.0;
-    let far = -1.0;
+    let aspect_ratio = 800.0 / 600.0;
+    let near = 0.5;
+    let far = 1024.0;
+
+    let scale = state.zoom * near;
+    let top = scale;
+    let bottom = -top;
+    let right = aspect_ratio * scale;
+    let left = -right;
 
     let projection = get_projection(&ProjectionSpec {
         top,
@@ -117,7 +132,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         1.0,
     ];
 
-    let view = mat4x4_mul(&projection, &camera);
+    let view = mat4x4_mul(&camera, &projection);
 
     for poly in state.polys.iter() {
         let world_matrix = [
@@ -139,7 +154,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             1.0,
         ];
 
-        let matrix = mat4x4_mul(&view, &world_matrix);
+        let matrix = mat4x4_mul(&world_matrix, &view);
 
         (p.draw_poly_with_matrix)(matrix, poly.index);
     }
