@@ -323,10 +323,14 @@ fn main() {
 
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         let window = canvas.window();
+        //I see a flat 16ms a lot of places. Should I be leaving that slack in here?
+        let frame_duration = std::time::Duration::new(0, 16666666);
 
         let mut event_pump = sdl_context.event_pump().unwrap();
 
         loop {
+            let start = std::time::Instant::now();
+
             events.clear();
 
             for event in event_pump.poll_iter() {
@@ -380,7 +384,17 @@ fn main() {
 
             window.gl_swap_window();
 
-            std::thread::sleep(std::time::Duration::from_millis(8));
+
+
+            if let Some(sleep_time) = frame_duration.checked_sub(
+                std::time::Instant::now().duration_since(
+                    start,
+                ),
+            )
+            {
+                std::thread::sleep(sleep_time);
+            }
+
         }
     } else {
         println!("Could not open window.");
@@ -388,6 +402,8 @@ fn main() {
 
 }
 
+// these `draw_` functions should probably batch draw calls to minimize shader switching,
+// but I'll be able to provide the same SPI and change to that later so it can wait
 fn draw_poly_with_matrix(world_matrix: [f32; 16], index: usize) {
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         unsafe {
