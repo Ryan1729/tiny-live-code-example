@@ -122,12 +122,11 @@ static mut RESOURCES: Option<Resources> = None;
 struct Resources {
     ctx: gl::Gl,
     vertex_buffer: gl::types::GLuint,
-    pos_attr: gl::types::GLsizei,
-    world_attr: gl::types::GLsizei,
-    colour_uniform: gl::types::GLint,
     vert_ranges_len: usize,
     vert_ranges: Ranges,
     textures: [gl::types::GLuint; 2],
+    colour_shader: ColourShader,
+    texture_shader: TextureShader,
 }
 
 impl Resources {
@@ -147,22 +146,66 @@ impl Resources {
 
         }
 
-        let vs = compile_shader(&ctx, VS_SRC, gl::VERTEX_SHADER);
+        let colour_shader = {
+            let vs = compile_shader(&ctx, UNTEXTURED_VS_SRC, gl::VERTEX_SHADER);
 
-        let fs = compile_shader(&ctx, FS_SRC, gl::FRAGMENT_SHADER);
+            let fs = compile_shader(&ctx, UNTEXTURED_FS_SRC, gl::FRAGMENT_SHADER);
 
-        let program = link_program(&ctx, vs, fs);
+            let program = link_program(&ctx, vs, fs);
 
-        let pos_attr = unsafe {
-            ctx.UseProgram(program);
+            let pos_attr = unsafe {
+                ctx.GetAttribLocation(program, CString::new("position").unwrap().as_ptr())
+            };
+            let matrix_uniform = unsafe {
+                ctx.GetUniformLocation(program, CString::new("matrix").unwrap().as_ptr())
+            };
 
-            ctx.GetAttribLocation(program, CString::new("position").unwrap().as_ptr())
+            let colour_uniform = unsafe {
+                ctx.GetUniformLocation(program, CString::new("colour").unwrap().as_ptr())
+            };
+
+            ColourShader {
+                program,
+                pos_attr,
+                matrix_uniform,
+                colour_uniform,
+            }
         };
-        let world_attr =
-            unsafe { ctx.GetUniformLocation(program, CString::new("world").unwrap().as_ptr()) };
 
-        let colour_uniform =
-            unsafe { ctx.GetUniformLocation(program, CString::new("colour").unwrap().as_ptr()) };
+        let texture_shader = {
+            let vs = compile_shader(&ctx, TEXTURED_VS_SRC, gl::VERTEX_SHADER);
+
+            let fs = compile_shader(&ctx, TEXTURED_FS_SRC, gl::FRAGMENT_SHADER);
+
+            let program = link_program(&ctx, vs, fs);
+
+            let pos_attr = unsafe {
+                ctx.GetAttribLocation(program, CString::new("position").unwrap().as_ptr())
+            };
+            let matrix_uniform = unsafe {
+                ctx.GetUniformLocation(program, CString::new("matrix").unwrap().as_ptr())
+            };
+
+            let textures_uniform = unsafe {
+                ctx.GetUniformLocation(program, CString::new("textures").unwrap().as_ptr())
+            };
+
+            let texture_index_uniform = unsafe {
+                ctx.GetUniformLocation(program, CString::new("texture_index").unwrap().as_ptr())
+            };
+
+            TextureShader {
+                program,
+                pos_attr,
+                matrix_uniform,
+                textures_uniform,
+                texture_index_uniform,
+            }
+        };
+
+        unsafe {
+            ctx.UseProgram(colour_shader.program);
+        }
 
         let textures = [
             make_texture_from_png(&ctx, "images/cardBack_blue.png"),
@@ -174,9 +217,8 @@ impl Resources {
             vert_ranges: [(0, 0); 16],
             vert_ranges_len: 0,
             vertex_buffer: 0,
-            pos_attr,
-            world_attr,
-            colour_uniform,
+            colour_shader,
+            texture_shader,
             textures,
         };
 
@@ -341,7 +383,6 @@ fn main() {
             std::thread::sleep(std::time::Duration::from_millis(8));
         }
     } else {
-        //TODO make GLOBALs a Result and display the error.
         println!("Could not open window.");
     }
 
@@ -351,7 +392,7 @@ fn draw_poly_with_matrix(world_matrix: [f32; 16], index: usize) {
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         unsafe {
             resources.ctx.UniformMatrix4fv(
-                resources.world_attr as _,
+                resources.colour_shader.matrix_uniform as _,
                 1,
                 gl::FALSE,
                 world_matrix.as_ptr() as _,
@@ -365,8 +406,8 @@ fn draw_poly_with_matrix(world_matrix: [f32; 16], index: usize) {
             start as _,
             ((end + 1 - start) / 2) as _,
             resources.vertex_buffer,
-            resources.pos_attr,
-            resources.colour_uniform,
+            resources.colour_shader.pos_attr,
+            resources.colour_shader.colour_uniform,
         );
     }
 }
@@ -459,18 +500,58 @@ fn draw_verts_with_outline(
         ctx.DrawArrays(gl::LINE_STRIP, 0, vert_count);
     }
 }
-static VS_SRC: &'static str = "#version 120\n\
+
+struct ColourShader {
+    program: gl::types::GLuint,
+    pos_attr: gl::types::GLsizei,
+    matrix_uniform: gl::types::GLsizei,
+    colour_uniform: gl::types::GLsizei,
+}
+
+static UNTEXTURED_VS_SRC: &'static str = "#version 120\n\
     attribute vec2 position;\n\
-    uniform mat4 world;\n\
+    uniform mat4 matrix;\n\
     void main() {\n\
-    gl_Position = world * vec4(position, -1.0, 1.0);\n\
+    gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
     }";
 
-static FS_SRC: &'static str = "#version 120\n\
+static UNTEXTURED_FS_SRC: &'static str = "#version 120\n\
     uniform vec4 colour;\n\
     void main() {\n\
        gl_FragColor = colour;\n\
     }";
+
+struct TextureShader {
+    program: gl::types::GLuint,
+    pos_attr: gl::types::GLsizei,
+    matrix_uniform: gl::types::GLsizei,
+    textures_uniform: gl::types::GLsizei,
+    texture_index_uniform: gl::types::GLsizei,
+}
+
+static TEXTURED_VS_SRC: &'static str = "#version 120\n\
+    attribute vec2 position;\n\
+    uniform mat4 matrix;\n\
+    varying vec2 texcoord;\n\
+    void main() {\n\
+        texcoord = position * vec2(0.5) + vec2(0.5);
+        gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
+    }";
+
+//using a spritesheet and calulationg uvs is apparently the optimized way,
+//but this will do for now.
+static TEXTURED_FS_SRC: &'static str = "#version 120\n\
+    uniform sampler2D textures[2];\n\
+    uniform int texture_index;\n\
+    varying vec2 texcoord;\n\
+    void main() {\n\
+        if (texture_index == 1) {
+            gl_FragColor = texture2D(textures[1], texcoord);\n\
+        } else {
+            gl_FragColor = texture2D(textures[0], texcoord);\n\
+        }
+    }";
+
 
 //shader helper functions based on https://gist.github.com/simias/c140d1479ada4d6218c0
 fn compile_shader(ctx: &gl::Gl, src: &str, shader_type: gl::types::GLenum) -> gl::types::GLuint {
