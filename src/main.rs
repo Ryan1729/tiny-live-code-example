@@ -119,12 +119,14 @@ type Ranges = [(u16, u16); 16];
 
 static mut RESOURCES: Option<Resources> = None;
 
+type Textures = [gl::types::GLuint; 2];
+
 struct Resources {
     ctx: gl::Gl,
     vertex_buffer: gl::types::GLuint,
     vert_ranges_len: usize,
     vert_ranges: Ranges,
-    textures: [gl::types::GLuint; 2],
+    textures: Textures,
     colour_shader: ColourShader,
     texture_shader: TextureShader,
 }
@@ -186,8 +188,11 @@ impl Resources {
                 ctx.GetUniformLocation(program, CString::new("matrix").unwrap().as_ptr())
             };
 
-            let textures_uniform = unsafe {
-                ctx.GetUniformLocation(program, CString::new("textures").unwrap().as_ptr())
+            let texture_uniforms = unsafe {
+                [
+                    ctx.GetUniformLocation(program, CString::new("textures[0]").unwrap().as_ptr()),
+                    ctx.GetUniformLocation(program, CString::new("textures[1]").unwrap().as_ptr()),
+                ]
             };
 
             let texture_index_uniform = unsafe {
@@ -198,7 +203,7 @@ impl Resources {
                 program,
                 pos_attr,
                 matrix_uniform,
-                textures_uniform,
+                texture_uniforms,
                 texture_index_uniform,
             }
         };
@@ -314,6 +319,8 @@ fn main() {
     let platform = Platform {
         draw_poly,
         draw_poly_with_matrix,
+        draw_textured_poly,
+        draw_textured_poly_with_matrix,
         set_verts,
     };
 
@@ -384,8 +391,6 @@ fn main() {
 
             window.gl_swap_window();
 
-
-
             if let Some(sleep_time) = frame_duration.checked_sub(
                 std::time::Instant::now().duration_since(
                     start,
@@ -422,8 +427,7 @@ fn draw_poly_with_matrix(world_matrix: [f32; 16], index: usize) {
             start as _,
             ((end + 1 - start) / 2) as _,
             resources.vertex_buffer,
-            resources.colour_shader.pos_attr,
-            resources.colour_shader.colour_uniform,
+            &resources.colour_shader,
         );
     }
 }
@@ -454,6 +458,61 @@ fn draw_poly(x: f32, y: f32, index: usize) {
     draw_poly_with_matrix(world_matrix, index);
 }
 
+fn draw_textured_poly(x: f32, y: f32, poly_index: usize, texture_index: gl::types::GLint) {
+    let mut world_matrix: [f32; 16] = [
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+    ];
+
+    world_matrix[12] = x;
+    world_matrix[13] = y;
+
+    draw_textured_poly_with_matrix(world_matrix, poly_index, texture_index);
+}
+
+fn draw_textured_poly_with_matrix(
+    world_matrix: [f32; 16],
+    poly_index: usize,
+    texture_index: gl::types::GLint,
+) {
+    if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
+        unsafe {
+            resources.ctx.UniformMatrix4fv(
+                resources.colour_shader.matrix_uniform as _,
+                1,
+                gl::FALSE,
+                world_matrix.as_ptr() as _,
+            );
+        }
+
+        let (start, end) = resources.vert_ranges[poly_index];
+
+        draw_verts_with_texture(
+            &resources.ctx,
+            start as _,
+            ((end + 1 - start) / 2) as _,
+            resources.vertex_buffer,
+            &resources.texture_shader,
+            &resources.textures,
+            texture_index,
+        );
+    }
+}
+
 fn set_verts(vert_vecs: Vec<Vec<f32>>) {
     if let Some(ref mut resources) = unsafe { RESOURCES.as_mut() } {
         resources.set_verts(vert_vecs);
@@ -465,14 +524,15 @@ fn draw_verts_with_outline(
     start: isize,
     vert_count: gl::types::GLsizei,
     vertex_buffer: gl::types::GLuint,
-    pos_attr: gl::types::GLsizei,
-    colour_uniform: gl::types::GLint,
+    colour_shader: &ColourShader,
 ) {
     unsafe {
+        ctx.UseProgram(colour_shader.program);
+
         ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
-        ctx.EnableVertexAttribArray(pos_attr as _);
+        ctx.EnableVertexAttribArray(colour_shader.pos_attr as _);
         ctx.VertexAttribPointer(
-            pos_attr as _,
+            colour_shader.pos_attr as _,
             2,
             gl::FLOAT,
             gl::FALSE as _,
@@ -487,13 +547,13 @@ fn draw_verts_with_outline(
         ctx.StencilOp(gl::INVERT, gl::INVERT, gl::INVERT);
         ctx.StencilFunc(gl::ALWAYS, 0x1, 0x1);
 
-        ctx.Uniform4f(colour_uniform, 1.0, 1.0, 1.0, 1.0);
+        ctx.Uniform4f(colour_shader.colour_uniform, 1.0, 1.0, 1.0, 1.0);
 
         ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
 
         ctx.ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
         ctx.Uniform4f(
-            colour_uniform,
+            colour_shader.colour_uniform,
             32.0 / 255.0,
             32.0 / 255.0,
             63.0 / 255.0,
@@ -507,13 +567,66 @@ fn draw_verts_with_outline(
 
         //outline
         ctx.Uniform4f(
-            colour_uniform,
+            colour_shader.colour_uniform,
             128.0 / 255.0,
             128.0 / 255.0,
             32.0 / 255.0,
             1.0,
         );
         ctx.DrawArrays(gl::LINE_STRIP, 0, vert_count);
+    }
+}
+
+//TODO can we pull a common sub-procedure out of this and draw_verts_with_outline?
+fn draw_verts_with_texture(
+    ctx: &gl::Gl,
+    start: isize,
+    vert_count: gl::types::GLsizei,
+    vertex_buffer: gl::types::GLuint,
+    texture_shader: &TextureShader,
+    textures: &Textures,
+    texture_index: gl::types::GLint,
+) {
+    unsafe {
+        ctx.UseProgram(texture_shader.program);
+
+        ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
+        ctx.EnableVertexAttribArray(texture_shader.pos_attr as _);
+        ctx.VertexAttribPointer(
+            texture_shader.pos_attr as _,
+            2,
+            gl::FLOAT,
+            gl::FALSE as _,
+            0,
+            std::ptr::null().offset(start * std::mem::size_of::<f32>() as isize),
+        );
+
+        ctx.ActiveTexture(gl::TEXTURE0);
+        ctx.BindTexture(gl::TEXTURE_2D, textures[0]);
+        ctx.Uniform1i(texture_shader.texture_uniforms[0], 0);
+
+        ctx.ActiveTexture(gl::TEXTURE1);
+        ctx.BindTexture(gl::TEXTURE_2D, textures[1]);
+        ctx.Uniform1i(texture_shader.texture_uniforms[1], 1);
+
+        ctx.Clear(gl::STENCIL_BUFFER_BIT);
+
+        ctx.Enable(gl::STENCIL_TEST);
+        ctx.ColorMask(gl::FALSE, gl::FALSE, gl::FALSE, gl::FALSE);
+        ctx.StencilOp(gl::INVERT, gl::INVERT, gl::INVERT);
+        ctx.StencilFunc(gl::ALWAYS, 0x1, 0x1);
+
+        ctx.Uniform1i(texture_shader.texture_index_uniform, texture_index);
+
+        ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
+
+        ctx.ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
+
+        ctx.StencilOp(gl::ZERO, gl::ZERO, gl::ZERO);
+        ctx.StencilFunc(gl::EQUAL, 1, 1);
+        ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
+        ctx.Disable(gl::STENCIL_TEST);
+
     }
 }
 
@@ -541,7 +654,7 @@ struct TextureShader {
     program: gl::types::GLuint,
     pos_attr: gl::types::GLsizei,
     matrix_uniform: gl::types::GLsizei,
-    textures_uniform: gl::types::GLsizei,
+    texture_uniforms: [gl::types::GLsizei; 2],
     texture_index_uniform: gl::types::GLsizei,
 }
 
@@ -550,7 +663,7 @@ static TEXTURED_VS_SRC: &'static str = "#version 120\n\
     uniform mat4 matrix;\n\
     varying vec2 texcoord;\n\
     void main() {\n\
-        texcoord = position * vec2(0.5) + vec2(0.5);
+        texcoord = position * vec2(-0.5) + vec2(0.5);
         gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
     }";
 
@@ -697,7 +810,7 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
                         height as _,
                         0,
                         external_format,
-                        gl::UNSIGNED_BYTE,
+                        data_type,
                         (match pixels {
                              image::DecodingResult::U8(v) => v.as_ptr() as _,
                              image::DecodingResult::U16(v) => v.as_ptr() as _,
