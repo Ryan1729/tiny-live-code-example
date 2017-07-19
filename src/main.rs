@@ -15,6 +15,14 @@ use open_gl_bindings::gl;
 
 use sdl2::event::Event;
 
+use std::io;
+use std::io::prelude::*;
+use std::fs::File;
+
+extern crate image;
+
+use image::ImageDecoder;
+
 use std::ffi::CString;
 use std::str;
 
@@ -119,6 +127,7 @@ struct Resources {
     colour_uniform: gl::types::GLint,
     vert_ranges_len: usize,
     vert_ranges: Ranges,
+    textures: [gl::types::GLuint; 2],
 }
 
 impl Resources {
@@ -155,6 +164,11 @@ impl Resources {
         let colour_uniform =
             unsafe { ctx.GetUniformLocation(program, CString::new("colour").unwrap().as_ptr()) };
 
+        let textures = [
+            make_texture_from_png(&ctx, "images/cardBack_blue.png"),
+            make_texture_from_png(&ctx, "images/cardBack_green.png"),
+        ];
+
         let mut result = Resources {
             ctx,
             vert_ranges: [(0, 0); 16],
@@ -163,6 +177,7 @@ impl Resources {
             pos_attr,
             world_attr,
             colour_uniform,
+            textures,
         };
 
         result.set_verts(app.get_vert_vecs());
@@ -544,4 +559,62 @@ fn get_verts_and_ranges(mut vert_vecs: Vec<Vec<f32>>) -> (Vec<f32>, Ranges, usiz
     }
 
     (verts, ranges, used_len)
+}
+
+fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
+    let mut texture = 0;
+
+    if let Ok(image) = File::open(filename) {
+        let mut decoder = image::png::PNGDecoder::new(image);
+        match (
+            decoder.dimensions(),
+            decoder.colortype(),
+            decoder.read_image(),
+        ) {
+            (Ok((width, height)), Ok(colortype), Ok(pixels)) => {
+                let (external_format, data_type) = match colortype {
+                    image::ColorType::RGB(8) => (gl::RGB, gl::UNSIGNED_BYTE),
+                    image::ColorType::RGB(16) => (gl::RGB, gl::UNSIGNED_SHORT),
+                    image::ColorType::RGBA(8) => (gl::RGBA, gl::UNSIGNED_BYTE),
+                    image::ColorType::RGBA(16) => (gl::RGBA, gl::UNSIGNED_SHORT),
+                    _ => {
+                        //TODO make this case more distinct
+                        return 0;
+                    }
+                };
+
+                unsafe {
+                    ctx.GenTextures(1, &mut texture as _);
+                    ctx.BindTexture(gl::TEXTURE_2D, texture);
+
+                    ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
+                    ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
+                    ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as _);
+                    ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as _);
+
+                    ctx.TexImage2D(
+                        gl::TEXTURE_2D,
+                        0,
+                        gl::RGBA8 as _,
+                        width as _,
+                        height as _,
+                        0,
+                        external_format,
+                        gl::UNSIGNED_BYTE,
+                        (match pixels {
+                             image::DecodingResult::U8(v) => v.as_ptr() as _,
+                             image::DecodingResult::U16(v) => v.as_ptr() as _,
+                         }),
+                    );
+                }
+            }
+            _ => {
+                return 0;
+            }
+        }
+
+
+
+    }
+    return texture;
 }
