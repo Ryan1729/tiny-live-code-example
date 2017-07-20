@@ -492,7 +492,7 @@ fn draw_textured_poly_with_matrix(
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         unsafe {
             resources.ctx.UniformMatrix4fv(
-                resources.colour_shader.matrix_uniform as _,
+                resources.texture_shader.matrix_uniform as _,
                 1,
                 gl::FALSE,
                 world_matrix.as_ptr() as _,
