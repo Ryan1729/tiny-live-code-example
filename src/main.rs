@@ -28,8 +28,10 @@ use std::str;
 
 use common::*;
 
-#[cfg(debug_assertions)]
+#[cfg(all(debug_assertions, unix))]
 const LIB_PATH: &'static str = "./target/debug/libstate_manipulation.so";
+#[cfg(all(debug_assertions, windows))]
+const LIB_PATH: &'static str = "./target/debug/state_manipulation.dll";
 #[cfg(not(debug_assertions))]
 const LIB_PATH: &'static str = "Hopefully compiled out";
 
