@@ -217,11 +217,19 @@ impl Resources {
             make_texture_from_png(&ctx, "images/cardBack_green.png"),
         ];
 
+        let vertex_buffer = unsafe {
+            let mut buffer = 0;
+
+            ctx.GenBuffers(1, &mut buffer as _);
+
+            buffer
+        };
+
         let mut result = Resources {
             ctx,
             vert_ranges: [(0, 0); 16],
             vert_ranges_len: 0,
-            vertex_buffer: 0,
+            vertex_buffer,
             colour_shader,
             texture_shader,
             textures,
@@ -236,19 +244,14 @@ impl Resources {
 
         let (verts, vert_ranges, vert_ranges_len) = get_verts_and_ranges(vert_vecs);
 
-        let vertex_buffer = unsafe {
-            let mut buffer = 0;
-
-            self.ctx.GenBuffers(1, &mut buffer as _);
-            self.ctx.BindBuffer(gl::ARRAY_BUFFER, buffer);
+        unsafe {
+            self.ctx.BindBuffer(gl::ARRAY_BUFFER, self.vertex_buffer);
             self.ctx.BufferData(
                 gl::ARRAY_BUFFER,
                 (verts.len() * std::mem::size_of::<f32>()) as _,
                 std::mem::transmute(verts.as_ptr()),
                 gl::DYNAMIC_DRAW,
             );
-
-            buffer
         };
 
         //TODO (assuming we don't end up manipulating this at all)
@@ -274,7 +277,6 @@ impl Resources {
 
         self.vert_ranges = vert_ranges;
         self.vert_ranges_len = vert_ranges_len;
-        self.vertex_buffer = vertex_buffer;
     }
 }
 
