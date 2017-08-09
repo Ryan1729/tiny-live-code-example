@@ -126,6 +126,7 @@ type Textures = [gl::types::GLuint; 2];
 struct Resources {
     ctx: gl::Gl,
     vertex_buffer: gl::types::GLuint,
+    index_buffer: gl::types::GLuint,
     vert_ranges_len: usize,
     vert_ranges: Ranges,
     textures: Textures,
@@ -227,11 +228,20 @@ impl Resources {
             buffer
         };
 
+        let index_buffer = unsafe {
+            let mut buffer = 0;
+
+            ctx.GenBuffers(1, &mut buffer as _);
+
+            buffer
+        };
+
         let mut result = Resources {
             ctx,
             vert_ranges: [(0, 0); 16],
             vert_ranges_len: 0,
             vertex_buffer,
+            index_buffer,
             colour_shader,
             texture_shader,
             textures,
@@ -263,10 +273,10 @@ impl Resources {
             (0..verts.len()).map(|x| x as gl::types::GLushort).collect();
 
         unsafe {
-            let mut buffer = 0;
-
-            self.ctx.GenBuffers(1, &mut buffer as _);
-            self.ctx.BindBuffer(gl::ELEMENT_ARRAY_BUFFER, buffer);
+            self.ctx.BindBuffer(
+                gl::ELEMENT_ARRAY_BUFFER,
+                self.index_buffer,
+            );
             self.ctx.BufferData(
                 gl::ELEMENT_ARRAY_BUFFER,
                 (indices.len() * std::mem::size_of::<gl::types::GLushort>()) as _,
@@ -274,7 +284,6 @@ impl Resources {
                 gl::DYNAMIC_DRAW,
             );
 
-            buffer
         };
 
         self.vert_ranges = vert_ranges;
