@@ -1530,6 +1530,8 @@ fn layout_paragraph<'a>(
 ) -> Vec<PositionedGlyph<'a>> {
     use unicode_normalization::UnicodeNormalization;
     let corner = vector(x, y);
+    let newline_point = (corner.x as u32 + width) as i32;
+
     let mut result = Vec::new();
     let v_metrics = font.v_metrics(scale);
     let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
@@ -1557,7 +1559,7 @@ fn layout_paragraph<'a>(
         last_glyph_id = Some(base_glyph.id());
         let mut glyph = base_glyph.scaled(scale).positioned(caret);
         if let Some(bb) = glyph.pixel_bounding_box() {
-            if bb.max.x > width as i32 {
+            if bb.max.x > newline_point {
                 caret = point(corner.x, caret.y + advance_height);
                 glyph = glyph.into_unpositioned().positioned(caret);
                 last_glyph_id = None;
