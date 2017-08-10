@@ -16,6 +16,7 @@ use open_gl_bindings::gl;
 use sdl2::event::Event;
 
 use std::io;
+use std::f32;
 use std::io::prelude::*;
 use std::fs::File;
 
@@ -134,7 +135,12 @@ macro_rules! opengl_error_check {
                             gl::OUT_OF_MEMORY => "OUT_OF_MEMORY",
                             _ => "Unknown error type",
                         };
-                        println!("OpenGL error: {}({}) on line {} of {}", err_str, err, line!(), file!());
+                        println!("OpenGL error: {}({}) on line {} of {}",
+                            err_str,
+                            err,
+                            line!(),
+                            file!()
+                        );
                     }
                     if err != gl::NO_ERROR {
                         panic!();
@@ -169,11 +175,17 @@ struct Resources {
     textures: Textures,
     colour_shader: ColourShader,
     texture_shader: TextureShader,
-    text_resources: TextResources
+    text_resources: TextResources,
+    text_render_command: Option<TextRenderCommand>,
 }
 
 impl Resources {
-    fn new(app: &Application, ctx: gl::Gl, (width, height): (u32, u32), cache_dim: (u32, u32)) -> Option<Self> {
+    fn new(
+        app: &Application,
+        ctx: gl::Gl,
+        (width, height): (u32, u32),
+        cache_dim: (u32, u32),
+    ) -> Option<Self> {
         unsafe {
             ctx.Viewport(0, 0, width as _, height as _);
 
@@ -289,6 +301,7 @@ impl Resources {
             texture_shader,
             textures,
             text_resources,
+            text_render_command: None,
         };
 
         result.set_verts(app.get_vert_vecs());
@@ -335,15 +348,176 @@ impl Resources {
     }
 }
 
+struct TextRenderCommand {
+    char_tuple: CharTuple,
+    char_count: u8,
+    coords: (f32, f32),
+    width_percentage: f32,
+    scale: f32,
+}
+
+impl TextRenderCommand {
+    fn new(text: &str, coords: (f32, f32), width_percentage: f32, scale: f32) -> Self {
+        debug_assert!(text.len() <= CHAR_TUPLE_CAPACITY);
+        let char_count = std::cmp::min(text.len(), CHAR_TUPLE_CAPACITY);
+
+        let mut char_tuple: CharTuple = Default::default();
+        let mut chars = text.chars();
+
+        for i in 0..char_count {
+            char_tuple[i as u8] = chars.next().unwrap();
+        }
+
+        TextRenderCommand {
+            char_tuple,
+            char_count: char_count as u8,
+            coords,
+            width_percentage,
+            scale,
+        }
+    }
+
+    fn get_text(&self) -> String {
+        let mut result = String::new();
+
+        for i in 0..self.char_count {
+            result.push(self.char_tuple[i]);
+        }
+
+        result
+    }
+}
+
+const CHAR_TUPLE_CAPACITY: usize = 32;
+
+#[derive(Default)]
+struct CharTuple(
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char
+);
+
+use std::ops::{Index, IndexMut};
+
+impl Index<u8> for CharTuple {
+    type Output = char;
+
+    fn index<'a>(&'a self, index: u8) -> &'a char {
+        match index {
+            0 => &self.0,
+            1 => &self.1,
+            2 => &self.2,
+            3 => &self.3,
+            4 => &self.4,
+            5 => &self.5,
+            6 => &self.6,
+            7 => &self.7,
+            8 => &self.8,
+            9 => &self.9,
+            10 => &self.10,
+            11 => &self.11,
+            12 => &self.12,
+            13 => &self.13,
+            14 => &self.14,
+            15 => &self.15,
+            16 => &self.16,
+            17 => &self.17,
+            18 => &self.18,
+            19 => &self.19,
+            20 => &self.20,
+            21 => &self.21,
+            22 => &self.22,
+            23 => &self.23,
+            24 => &self.24,
+            25 => &self.25,
+            26 => &self.26,
+            27 => &self.27,
+            28 => &self.28,
+            29 => &self.29,
+            30 => &self.30,
+            31 => &self.31,
+            _ => panic!("bad CharTuple index"),
+        }
+    }
+}
+
+impl IndexMut<u8> for CharTuple {
+    fn index_mut<'a>(&'a mut self, index: u8) -> &'a mut char {
+        match index {
+            0 => &mut self.0,
+            1 => &mut self.1,
+            2 => &mut self.2,
+            3 => &mut self.3,
+            4 => &mut self.4,
+            5 => &mut self.5,
+            6 => &mut self.6,
+            7 => &mut self.7,
+            8 => &mut self.8,
+            9 => &mut self.9,
+            10 => &mut self.10,
+            11 => &mut self.11,
+            12 => &mut self.12,
+            13 => &mut self.13,
+            14 => &mut self.14,
+            15 => &mut self.15,
+            16 => &mut self.16,
+            17 => &mut self.17,
+            18 => &mut self.18,
+            19 => &mut self.19,
+            20 => &mut self.20,
+            21 => &mut self.21,
+            22 => &mut self.22,
+            23 => &mut self.23,
+            24 => &mut self.24,
+            25 => &mut self.25,
+            26 => &mut self.26,
+            27 => &mut self.27,
+            28 => &mut self.28,
+            29 => &mut self.29,
+            30 => &mut self.30,
+            31 => &mut self.31,
+            _ => panic!("bad CharTuple index"),
+        }
+    }
+}
 
 struct TextResources {
-    shader : TextShader,
-    texture : gl::types::GLuint,
+    shader: TextShader,
+    texture: gl::types::GLuint,
     vertex_buffer: gl::types::GLuint,
 }
 
 impl TextResources {
-    fn new(ctx: &gl::Gl, (width, height) : (u32, u32)) -> Self {
+    fn new(ctx: &gl::Gl, (width, height): (u32, u32)) -> Self {
         let shader = {
             let vs = compile_shader(&ctx, FONT_VS_SRC, gl::VERTEX_SHADER);
 
@@ -359,13 +533,11 @@ impl TextResources {
                 ctx.GetAttribLocation(program, CString::new("texcoord").unwrap().as_ptr())
             };
 
-            let colour_attr = unsafe {
-                ctx.GetAttribLocation(program, CString::new("colour").unwrap().as_ptr())
-            };
+            let colour_attr =
+                unsafe { ctx.GetAttribLocation(program, CString::new("colour").unwrap().as_ptr()) };
 
-            let texture_uniform = unsafe {
-                ctx.GetUniformLocation(program, CString::new("tex").unwrap().as_ptr())
-            };
+            let texture_uniform =
+                unsafe { ctx.GetUniformLocation(program, CString::new("tex").unwrap().as_ptr()) };
 
             debug_assert!(pos_attr != -1);
             debug_assert!(tex_attr != -1);
@@ -429,19 +601,19 @@ fn main() {
     let mut app = Application::new();
 
     let font_data = include_bytes!("../fonts/LiberationSerif-Regular.ttf");
-    let font = FontCollection::from_bytes(font_data as &[u8]).into_font().unwrap();
+    let font = FontCollection::from_bytes(font_data as &[u8])
+        .into_font()
+        .unwrap();
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
-
-
 
     let gl_attr = video_subsystem.gl_attr();
     gl_attr.set_stencil_size(1);
     gl_attr.set_context_major_version(2);
     gl_attr.set_context_minor_version(1);
 
-    let canvas : sdl2::render::Canvas<sdl2::video::Window> = video_subsystem
+    let canvas: sdl2::render::Canvas<sdl2::video::Window> = video_subsystem
         .window("Window", 800, 600)
         .opengl()
         .build()
@@ -459,7 +631,10 @@ fn main() {
         let ctx = gl::Gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
         canvas.window().gl_set_context_to_current().unwrap();
 
-        RESOURCES = Resources::new(&app, ctx, canvas.window().drawable_size(), (cache_width, cache_height))
+        RESOURCES = Resources::new(&app, ctx, canvas.window().drawable_size(), (
+            cache_width,
+            cache_height,
+        ))
     }
 
     let mut state = app.new_state();
@@ -477,6 +652,7 @@ fn main() {
         draw_poly_with_matrix,
         draw_textured_poly,
         draw_textured_poly_with_matrix,
+        draw_text,
         set_verts,
     };
 
@@ -486,16 +662,13 @@ fn main() {
 
     opengl_error_check!();
 
-    if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
+    if let Some(ref mut resources) = unsafe { RESOURCES.as_mut() } {
         let window = canvas.window();
         //I see a flat 16ms a lot of places. Should I be leaving that slack in here?
         let frame_duration = std::time::Duration::new(0, 16666666);
 
         let mut event_pump = sdl_context.event_pump().unwrap();
 
-        let mut text_counter = 0;
-
-        let mut text = "".to_owned();
         loop {
             let start = std::time::Instant::now();
 
@@ -504,170 +677,6 @@ fn main() {
                     gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
                 );
             }
-
-            text_counter += 1;
-
-            if text_counter > 15 {
-                text = random_string(&mut state.rng);
-
-                text_counter = 0;
-            }
-
-            let width = canvas.window().drawable_size().0;
-
-            {
-                let ctx = &resources.ctx;
-
-            let glyphs = layout_paragraph(&font, Scale::uniform(96.0), width, &text);
-            for glyph in &glyphs {
-                text_cache.queue_glyph(0, glyph.clone());
-            }
-
-            let text_resources = &resources.text_resources;
-            unsafe {
-                ctx.ActiveTexture(gl::TEXTURE2);
-                ctx.BindTexture(gl::TEXTURE_2D, text_resources.texture);
-
-                ctx.PixelStorei(gl::UNPACK_ALIGNMENT, 1);
-            }
-            text_cache.cache_queued(|rect, data| {
-                unsafe {
-                    ctx.TexSubImage2D(
-                        gl::TEXTURE_2D,
-                        0,
-                        rect.min.x as _,
-                        rect.min.y as _,
-                        rect.width() as _,
-                        rect.height() as _,
-                        gl::RED,
-                        gl::UNSIGNED_BYTE,
-                        data.as_ptr() as _,
-                    );
-                }
-            }).unwrap();
-
-            unsafe {
-                //back to default
-                ctx.PixelStorei(gl::UNPACK_ALIGNMENT, 4);
-            }
-
-            opengl_error_check!();
-            let (screen_width, screen_height) = canvas.window().drawable_size();
-
-            let colour = [0.0,1.0,1.0,1.0];
-
-            #[repr(C)]
-            #[derive(Copy, Clone, Debug)]
-            struct Vertex {
-                position: [f32; 2],
-                tex_coords: [f32; 2],
-                colour: [f32; 4]
-            }
-
-            let origin = point(0.0, 0.0);
-
-            let verts: Vec<_> = glyphs.iter().flat_map(|g| {
-                if let Ok(Some((uv_rect, screen_rect))) = text_cache.rect_for(0, g) {
-                    let gl_rect = rusttype::Rect {
-                        min: origin + (vector(screen_rect.min.x as f32 / screen_width as f32 - 0.5,
-                                      1.0 - screen_rect.min.y as f32 / screen_height as f32 - 0.5)) * 2.0,
-                        max: origin +(vector(screen_rect.max.x as f32 / screen_width as f32 - 0.5,
-                                      1.0 - screen_rect.max.y as f32 / screen_height as f32 - 0.5)) * 2.0
-                    };
-                    vec![
-                        Vertex {
-                            position: [gl_rect.min.x, gl_rect.max.y],
-                            tex_coords: [uv_rect.min.x, uv_rect.max.y],
-                            colour
-                        },
-                        Vertex {
-                            position: [gl_rect.min.x,  gl_rect.min.y],
-                            tex_coords: [uv_rect.min.x, uv_rect.min.y],
-                            colour
-                        },
-                        Vertex {
-                            position: [gl_rect.max.x,  gl_rect.min.y],
-                            tex_coords: [uv_rect.max.x, uv_rect.min.y],
-                            colour
-                        },
-                        Vertex {
-                            position: [gl_rect.max.x,  gl_rect.min.y],
-                            tex_coords: [uv_rect.max.x, uv_rect.min.y],
-                            colour },
-                        Vertex {
-                            position: [gl_rect.max.x, gl_rect.max.y],
-                            tex_coords: [uv_rect.max.x, uv_rect.max.y],
-                            colour
-                        },
-                        Vertex {
-                            position: [gl_rect.min.x, gl_rect.max.y],
-                            tex_coords: [uv_rect.min.x, uv_rect.max.y],
-                            colour
-                        }]
-                } else {
-                    Vec::new()
-                }
-            }).collect();
-
-            let vert_count = verts.len() as gl::types::GLint;
-
-            unsafe {
-                let shader = &text_resources.shader;
-                ctx.UseProgram(shader.program);
-
-                ctx.BindBuffer(gl::ARRAY_BUFFER, text_resources.vertex_buffer);
-
-                ctx.BufferData(
-                    gl::ARRAY_BUFFER,
-                    (vert_count * std::mem::size_of::<Vertex>() as i32) as _,
-                    std::mem::transmute(verts.as_ptr()),
-                    gl::DYNAMIC_DRAW,
-                );
-                ctx.EnableVertexAttribArray(shader.pos_attr as _);
-                ctx.VertexAttribPointer(
-                    shader.pos_attr as _,
-                    2,
-                    gl::FLOAT,
-                    gl::FALSE as _,
-                    std::mem::size_of::<Vertex>() as _,
-                    std::ptr::null(),
-                );
-
-                opengl_error_check!();
-                ctx.EnableVertexAttribArray(shader.tex_attr as _);
-                ctx.VertexAttribPointer(
-                    shader.tex_attr as _,
-                    2,
-                    gl::FLOAT,
-                    gl::FALSE as _,
-                    std::mem::size_of::<Vertex>() as _,
-                    std::ptr::null().offset(std::mem::size_of::<[f32; 2]>() as isize),
-                );
-
-                opengl_error_check!();
-                ctx.EnableVertexAttribArray(shader.colour_attr as _);
-                ctx.VertexAttribPointer(
-                    shader.colour_attr as _,
-                    4,
-                    gl::FLOAT,
-                    gl::FALSE as _,
-                    std::mem::size_of::<Vertex>() as _,
-                    std::ptr::null().offset(2 * std::mem::size_of::<[f32; 2]>() as isize),
-                );
-                opengl_error_check!();
-
-                ctx.ActiveTexture(gl::TEXTURE2);
-                ctx.BindTexture(gl::TEXTURE_2D, text_resources.texture);
-                ctx.Uniform1i(shader.texture_uniform, 2);
-
-                ctx.Clear(gl::STENCIL_BUFFER_BIT);
-
-                ctx.DrawArrays(gl::TRIANGLES, 0, vert_count);
-                ctx.Disable(gl::STENCIL_TEST);
-                ctx.BindTexture(gl::TEXTURE_2D, 0);
-            }
-
-        }
 
             events.clear();
 
@@ -687,6 +696,31 @@ fn main() {
             if app.update_and_render(&platform, &mut state, &mut events) {
                 //quit requested
                 break;
+            }
+
+            //This is a hack that will hopefully be obsoleted when `Drop` types are
+            //allowed in statics. see https://github.com/rust-lang/rust/issues/33156
+            //We'd rather just store everything we need to do this in `RESOURCES`
+            //and call this from `draw_text`
+            {
+                if let Some(ref text_render_command) = resources.text_render_command {
+
+                    let screen_dim = canvas.window().drawable_size();
+
+                    let text = text_render_command.get_text();
+
+                    render_text(
+                        &mut text_cache,
+                        &font,
+                        screen_dim,
+                        &text,
+                        text_render_command.coords,
+                        text_render_command.width_percentage,
+                        text_render_command.scale,
+                    );
+                }
+
+                resources.text_render_command = None;
             }
 
             if cfg!(debug_assertions) {
@@ -946,6 +980,200 @@ fn draw_verts_with_outline(
     }
 }
 
+fn draw_text(text: &str, (x, y): (f32, f32), width_percentage: f32, scale: f32) {
+    if let Some(ref mut resources) = unsafe { RESOURCES.as_mut() } {
+        resources.text_render_command = Some(TextRenderCommand::new(
+            text,
+            (x, y),
+            width_percentage,
+            scale,
+        ));
+    }
+}
+fn render_text(
+    text_cache: &mut rusttype::gpu_cache::Cache,
+    font: &Font,
+    (screen_width, screen_height): (u32, u32),
+    text: &str,
+    (x, y): (f32, f32),
+    width_percentage: f32,
+    scale: f32,
+) {
+    if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
+        let ctx = &resources.ctx;
+
+        let paragraph_width = (width_percentage * screen_width as f32) as u32;
+
+        let glyphs = layout_paragraph(font, Scale::uniform(scale), paragraph_width, text, (
+            x *
+                screen_width as
+                    f32,
+            y *
+                screen_height as
+                    f32,
+        ));
+        for glyph in &glyphs {
+            text_cache.queue_glyph(0, glyph.clone());
+        }
+
+        let text_resources = &resources.text_resources;
+        unsafe {
+            ctx.ActiveTexture(gl::TEXTURE2);
+            ctx.BindTexture(gl::TEXTURE_2D, text_resources.texture);
+
+            ctx.PixelStorei(gl::UNPACK_ALIGNMENT, 1);
+        }
+        text_cache
+            .cache_queued(|rect, data| unsafe {
+                ctx.TexSubImage2D(
+                    gl::TEXTURE_2D,
+                    0,
+                    rect.min.x as _,
+                    rect.min.y as _,
+                    rect.width() as _,
+                    rect.height() as _,
+                    gl::RED,
+                    gl::UNSIGNED_BYTE,
+                    data.as_ptr() as _,
+                );
+            })
+            .unwrap();
+
+        unsafe {
+            //back to default
+            ctx.PixelStorei(gl::UNPACK_ALIGNMENT, 4);
+        }
+
+        opengl_error_check!();
+
+        let colour = [0.0, 1.0, 1.0, 1.0];
+
+        #[repr(C)]
+        #[derive(Copy, Clone, Debug)]
+        struct Vertex {
+            position: [f32; 2],
+            tex_coords: [f32; 2],
+            colour: [f32; 4],
+        }
+
+        let origin = point(0.0, 0.0);
+
+        let verts: Vec<_> = glyphs
+            .iter()
+            .flat_map(|g| if let Ok(Some((uv_rect, screen_rect))) =
+                text_cache.rect_for(0, g)
+            {
+                let gl_rect = rusttype::Rect {
+                    min: origin +
+                        (vector(
+                            screen_rect.min.x as f32 / screen_width as f32 - 0.5,
+                            1.0 - screen_rect.min.y as f32 / screen_height as f32 - 0.5,
+                        )) * 2.0,
+                    max: origin +
+                        (vector(
+                            screen_rect.max.x as f32 / screen_width as f32 - 0.5,
+                            1.0 - screen_rect.max.y as f32 / screen_height as f32 - 0.5,
+                        )) * 2.0,
+                };
+                vec![
+                    Vertex {
+                        position: [gl_rect.min.x, gl_rect.max.y],
+                        tex_coords: [uv_rect.min.x, uv_rect.max.y],
+                        colour,
+                    },
+                    Vertex {
+                        position: [gl_rect.min.x, gl_rect.min.y],
+                        tex_coords: [uv_rect.min.x, uv_rect.min.y],
+                        colour,
+                    },
+                    Vertex {
+                        position: [gl_rect.max.x, gl_rect.min.y],
+                        tex_coords: [uv_rect.max.x, uv_rect.min.y],
+                        colour,
+                    },
+                    Vertex {
+                        position: [gl_rect.max.x, gl_rect.min.y],
+                        tex_coords: [uv_rect.max.x, uv_rect.min.y],
+                        colour,
+                    },
+                    Vertex {
+                        position: [gl_rect.max.x, gl_rect.max.y],
+                        tex_coords: [uv_rect.max.x, uv_rect.max.y],
+                        colour,
+                    },
+                    Vertex {
+                        position: [gl_rect.min.x, gl_rect.max.y],
+                        tex_coords: [uv_rect.min.x, uv_rect.max.y],
+                        colour,
+                    },
+                ]
+            } else {
+                Vec::new()
+            })
+            .collect();
+
+        let vert_count = verts.len() as gl::types::GLint;
+
+        unsafe {
+            let shader = &text_resources.shader;
+            ctx.UseProgram(shader.program);
+
+            ctx.BindBuffer(gl::ARRAY_BUFFER, text_resources.vertex_buffer);
+
+            ctx.BufferData(
+                gl::ARRAY_BUFFER,
+                (vert_count * std::mem::size_of::<Vertex>() as i32) as _,
+                std::mem::transmute(verts.as_ptr()),
+                gl::DYNAMIC_DRAW,
+            );
+            ctx.EnableVertexAttribArray(shader.pos_attr as _);
+            ctx.VertexAttribPointer(
+                shader.pos_attr as _,
+                2,
+                gl::FLOAT,
+                gl::FALSE as _,
+                std::mem::size_of::<Vertex>() as _,
+                std::ptr::null(),
+            );
+
+            opengl_error_check!();
+            ctx.EnableVertexAttribArray(shader.tex_attr as _);
+            ctx.VertexAttribPointer(
+                shader.tex_attr as _,
+                2,
+                gl::FLOAT,
+                gl::FALSE as _,
+                std::mem::size_of::<Vertex>() as _,
+                std::ptr::null().offset(std::mem::size_of::<[f32; 2]>() as isize),
+            );
+
+            opengl_error_check!();
+            ctx.EnableVertexAttribArray(shader.colour_attr as _);
+            ctx.VertexAttribPointer(
+                shader.colour_attr as _,
+                4,
+                gl::FLOAT,
+                gl::FALSE as _,
+                std::mem::size_of::<Vertex>() as _,
+                std::ptr::null().offset(2 * std::mem::size_of::<[f32; 2]>() as isize),
+            );
+            opengl_error_check!();
+
+            ctx.ActiveTexture(gl::TEXTURE2);
+            ctx.BindTexture(gl::TEXTURE_2D, text_resources.texture);
+            ctx.Uniform1i(shader.texture_uniform, 2);
+
+            ctx.Clear(gl::STENCIL_BUFFER_BIT);
+
+            ctx.DrawArrays(gl::TRIANGLES, 0, vert_count);
+            ctx.Disable(gl::STENCIL_TEST);
+            ctx.BindTexture(gl::TEXTURE_2D, 0);
+        }
+
+
+    }
+}
+
 
 struct ColourShader {
     program: gl::types::GLuint,
@@ -1174,23 +1402,27 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
 }
 
 //from the rusttype gpu_cache example
-fn layout_paragraph<'a>(font: &'a Font,
-                        scale: Scale,
-                        width: u32,
-                        text: &str) -> Vec<PositionedGlyph<'a>> {
+fn layout_paragraph<'a>(
+    font: &'a Font,
+    scale: Scale,
+    width: u32,
+    text: &str,
+    (x, y): (f32, f32),
+) -> Vec<PositionedGlyph<'a>> {
     use unicode_normalization::UnicodeNormalization;
+    let corner = vector(x, y);
     let mut result = Vec::new();
     let v_metrics = font.v_metrics(scale);
     let advance_height = v_metrics.ascent - v_metrics.descent + v_metrics.line_gap;
-    let mut caret = point(0.0, v_metrics.ascent);
+    let mut caret = point(0.0, v_metrics.ascent) + corner;
     let mut last_glyph_id = None;
     for c in text.nfc() {
         if c.is_control() {
             match c {
                 '\r' => {
-                    caret = point(0.0, caret.y + advance_height);
+                    caret = point(corner.x, caret.y + advance_height);
                 }
-                '\n' => {},
+                '\n' => {}
                 _ => {}
             }
             continue;
@@ -1207,7 +1439,7 @@ fn layout_paragraph<'a>(font: &'a Font,
         let mut glyph = base_glyph.scaled(scale).positioned(caret);
         if let Some(bb) = glyph.pixel_bounding_box() {
             if bb.max.x > width as i32 {
-                caret = point(0.0, caret.y + advance_height);
+                caret = point(corner.x, caret.y + advance_height);
                 glyph = glyph.into_unpositioned().positioned(caret);
                 last_glyph_id = None;
             }

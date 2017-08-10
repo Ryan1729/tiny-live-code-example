@@ -2,9 +2,8 @@ extern crate rand;
 
 use rand::{StdRng, Rng};
 
-pub fn random_string(rng : &mut StdRng) -> String {
-    rng.gen_ascii_chars()
-        .take(6).collect()
+pub fn random_string(rng: &mut StdRng) -> String {
+    rng.gen_ascii_chars().take(6).collect()
 }
 
 pub struct Platform {
@@ -12,6 +11,7 @@ pub struct Platform {
     pub draw_poly_with_matrix: fn([f32; 16], usize),
     pub draw_textured_poly: fn(f32, f32, usize, i32),
     pub draw_textured_poly_with_matrix: fn([f32; 16], usize, i32),
+    pub draw_text: fn(&str, (f32, f32), f32, f32),
     pub set_verts: fn(Vec<Vec<f32>>),
 }
 
