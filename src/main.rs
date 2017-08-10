@@ -113,6 +113,38 @@ impl Application {
     }
 }
 
+macro_rules! opengl_error_check {
+    () => {
+
+        if cfg!(debug_assertions) {
+            #[allow(unused_unsafe)] {
+                if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
+                    let mut err;
+                    while {
+                        err = unsafe { resources.ctx.GetError() };
+                        err != gl::NO_ERROR
+                    }
+                    {
+                        let err_str = match err {
+                            gl::INVALID_ENUM => "INVALID_ENUM",
+                            gl::INVALID_VALUE => "INVALID_VALUE",
+                            gl::INVALID_OPERATION => "INVALID_OPERATION",
+                            gl::STACK_OVERFLOW => "STACK_OVERFLOW",
+                            gl::STACK_UNDERFLOW => "STACK_UNDERFLOW",
+                            gl::OUT_OF_MEMORY => "OUT_OF_MEMORY",
+                            _ => "Unknown error type",
+                        };
+                        println!("OpenGL error: {}({}) on line {} of {}", err_str, err, line!(), file!());
+                    }
+                    if err != gl::NO_ERROR {
+                        panic!();
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn find_sdl_gl_driver() -> Option<u32> {
     for (index, item) in sdl2::render::drivers().enumerate() {
         if item.name == "opengl" {
@@ -242,6 +274,9 @@ impl Resources {
 
             buffer
         };
+
+        opengl_error_check!();
+
         let text_resources = TextResources::new(&ctx, cache_dim);
 
         let mut result = Resources {
@@ -332,6 +367,11 @@ impl TextResources {
                 ctx.GetUniformLocation(program, CString::new("tex").unwrap().as_ptr())
             };
 
+            debug_assert!(pos_attr != -1);
+            debug_assert!(tex_attr != -1);
+            debug_assert!(colour_attr != -1);
+            debug_assert!(texture_uniform != -1);
+
             TextShader {
                 program,
                 pos_attr,
@@ -352,19 +392,16 @@ impl TextResources {
             ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as _);
             ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as _);
 
-            let test = vec![255u8; (width * height * 4) as _];
-
             ctx.TexImage2D(
                 gl::TEXTURE_2D,
                 0,
-                gl::RGBA as _,
+                gl::RED as _,
                 width as _,
                 height as _,
                 0,
-                gl::RGBA,
+                gl::RED,
                 gl::UNSIGNED_BYTE,
-                // std::ptr::null() as _,
-                test.as_ptr() as _,
+                std::ptr::null() as _,
             );
 
             texture
@@ -377,6 +414,8 @@ impl TextResources {
 
             buffer
         };
+
+        opengl_error_check!();
 
         TextResources {
             shader,
@@ -412,8 +451,7 @@ fn main() {
         .build()
         .unwrap();
 
-    let (cache_width, cache_height) = (64, 64);
-    // let (cache_width, cache_height) = (512, 512);
+    let (cache_width, cache_height) = (512, 512);
 
     let mut text_cache = rusttype::gpu_cache::Cache::new(cache_width, cache_height, 0.1, 0.1);
 
@@ -422,21 +460,6 @@ fn main() {
         canvas.window().gl_set_context_to_current().unwrap();
 
         RESOURCES = Resources::new(&app, ctx, canvas.window().drawable_size(), (cache_width, cache_height))
-    }
-    if cfg!(debug_assertions) {
-        if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
-            let mut err;
-            while {
-                err = unsafe { resources.ctx.GetError() };
-                err != gl::NO_ERROR
-            }
-            {
-                println!("OpenGL Setup error: {}", err);
-            }
-            if err != gl::NO_ERROR {
-                panic!();
-            }
-        }
     }
 
     let mut state = app.new_state();
@@ -461,21 +484,7 @@ fn main() {
 
     app.update_and_render(&platform, &mut state, &mut events);
 
-    if cfg!(debug_assertions) {
-        if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
-            let mut err;
-            while {
-                err = unsafe { resources.ctx.GetError() };
-                err != gl::NO_ERROR
-            }
-            {
-                println!("OpenGL First Frame error: {}", err);
-            }
-            if err != gl::NO_ERROR {
-                panic!();
-            }
-        }
-    }
+    opengl_error_check!();
 
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         let window = canvas.window();
@@ -485,15 +494,21 @@ fn main() {
         let mut event_pump = sdl_context.event_pump().unwrap();
 
         let mut text_counter = 0;
-        let mut text = "QWERTY".to_owned();
+
+        let mut text = "".to_owned();
         loop {
             let start = std::time::Instant::now();
 
+            unsafe {
+                resources.ctx.Clear(
+                    gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
+                );
+            }
 
-            // text_counter += 1;
+            text_counter += 1;
 
             if text_counter > 15 {
-                // text = random_string(&mut state.rng);
+                text = random_string(&mut state.rng);
 
                 text_counter = 0;
             }
@@ -503,7 +518,7 @@ fn main() {
             {
                 let ctx = &resources.ctx;
 
-            let glyphs = layout_paragraph(&font, Scale::uniform(24.0), width, &text);
+            let glyphs = layout_paragraph(&font, Scale::uniform(96.0), width, &text);
             for glyph in &glyphs {
                 text_cache.queue_glyph(0, glyph.clone());
             }
@@ -512,9 +527,10 @@ fn main() {
             unsafe {
                 ctx.ActiveTexture(gl::TEXTURE2);
                 ctx.BindTexture(gl::TEXTURE_2D, text_resources.texture);
+
+                ctx.PixelStorei(gl::UNPACK_ALIGNMENT, 1);
             }
             text_cache.cache_queued(|rect, data| {
-                println!("{:?}", data);
                 unsafe {
                     ctx.TexSubImage2D(
                         gl::TEXTURE_2D,
@@ -523,18 +539,22 @@ fn main() {
                         rect.min.y as _,
                         rect.width() as _,
                         rect.height() as _,
-                        gl::RGB,
+                        gl::RED,
                         gl::UNSIGNED_BYTE,
                         data.as_ptr() as _,
-                );
-
-
+                    );
                 }
             }).unwrap();
 
+            unsafe {
+                //back to default
+                ctx.PixelStorei(gl::UNPACK_ALIGNMENT, 4);
+            }
+
+            opengl_error_check!();
             let (screen_width, screen_height) = canvas.window().drawable_size();
 
-            let colour = [1.0,0.0,1.0,1.0];
+            let colour = [0.0,1.0,1.0,1.0];
 
             #[repr(C)]
             #[derive(Copy, Clone, Debug)]
@@ -558,31 +578,31 @@ fn main() {
                         Vertex {
                             position: [gl_rect.min.x, gl_rect.max.y],
                             tex_coords: [uv_rect.min.x, uv_rect.max.y],
-                            colour: colour
+                            colour
                         },
                         Vertex {
                             position: [gl_rect.min.x,  gl_rect.min.y],
                             tex_coords: [uv_rect.min.x, uv_rect.min.y],
-                            colour: colour
+                            colour
                         },
                         Vertex {
                             position: [gl_rect.max.x,  gl_rect.min.y],
                             tex_coords: [uv_rect.max.x, uv_rect.min.y],
-                            colour: colour
+                            colour
                         },
                         Vertex {
                             position: [gl_rect.max.x,  gl_rect.min.y],
                             tex_coords: [uv_rect.max.x, uv_rect.min.y],
-                            colour: colour },
+                            colour },
                         Vertex {
                             position: [gl_rect.max.x, gl_rect.max.y],
                             tex_coords: [uv_rect.max.x, uv_rect.max.y],
-                            colour: colour
+                            colour
                         },
                         Vertex {
                             position: [gl_rect.min.x, gl_rect.max.y],
                             tex_coords: [uv_rect.min.x, uv_rect.max.y],
-                            colour: colour
+                            colour
                         }]
                 } else {
                     Vec::new()
@@ -590,9 +610,6 @@ fn main() {
             }).collect();
 
             let vert_count = verts.len() as gl::types::GLint;
-
-            // println!("{:?}", verts);
-            // panic!();
 
             unsafe {
                 let shader = &text_resources.shader;
@@ -606,7 +623,6 @@ fn main() {
                     std::mem::transmute(verts.as_ptr()),
                     gl::DYNAMIC_DRAW,
                 );
-
                 ctx.EnableVertexAttribArray(shader.pos_attr as _);
                 ctx.VertexAttribPointer(
                     shader.pos_attr as _,
@@ -617,6 +633,7 @@ fn main() {
                     std::ptr::null(),
                 );
 
+                opengl_error_check!();
                 ctx.EnableVertexAttribArray(shader.tex_attr as _);
                 ctx.VertexAttribPointer(
                     shader.tex_attr as _,
@@ -627,6 +644,7 @@ fn main() {
                     std::ptr::null().offset(std::mem::size_of::<[f32; 2]>() as isize),
                 );
 
+                opengl_error_check!();
                 ctx.EnableVertexAttribArray(shader.colour_attr as _);
                 ctx.VertexAttribPointer(
                     shader.colour_attr as _,
@@ -636,31 +654,20 @@ fn main() {
                     std::mem::size_of::<Vertex>() as _,
                     std::ptr::null().offset(2 * std::mem::size_of::<[f32; 2]>() as isize),
                 );
+                opengl_error_check!();
 
                 ctx.ActiveTexture(gl::TEXTURE2);
                 ctx.BindTexture(gl::TEXTURE_2D, text_resources.texture);
-                ctx.Uniform1i(shader.texture_uniform, 0);
+                ctx.Uniform1i(shader.texture_uniform, 2);
 
                 ctx.Clear(gl::STENCIL_BUFFER_BIT);
 
-                ctx.Enable(gl::STENCIL_TEST);
-                ctx.ColorMask(gl::FALSE, gl::FALSE, gl::FALSE, gl::FALSE);
-                ctx.StencilOp(gl::INVERT, gl::INVERT, gl::INVERT);
-                ctx.StencilFunc(gl::ALWAYS, 0x1, 0x1);
-
-                ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
-
-                ctx.ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
-
-                ctx.StencilOp(gl::ZERO, gl::ZERO, gl::ZERO);
-                ctx.StencilFunc(gl::EQUAL, 1, 1);
-                ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
+                ctx.DrawArrays(gl::TRIANGLES, 0, vert_count);
                 ctx.Disable(gl::STENCIL_TEST);
+                ctx.BindTexture(gl::TEXTURE_2D, 0);
+            }
 
-            ctx.BindTexture(gl::TEXTURE_2D, 0);
         }
-
-}
 
             events.clear();
 
@@ -675,12 +682,6 @@ fn main() {
                     }
                     _ => {}
                 }
-            }
-
-            unsafe {
-                resources.ctx.Clear(
-                    gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
-                );
             }
 
             if app.update_and_render(&platform, &mut state, &mut events) {
@@ -698,20 +699,7 @@ fn main() {
                 }
             }
 
-            if cfg!(debug_assertions) {
-                let mut err;
-                while {
-                    err = unsafe { resources.ctx.GetError() };
-                    err != gl::NO_ERROR
-                }
-                {
-                    println!("OpenGL error: {}", err);
-                }
-                if err != gl::NO_ERROR {
-                    panic!();
-                }
-
-            }
+            opengl_error_check!();
 
             window.gl_swap_window();
 
@@ -865,16 +853,8 @@ fn draw_verts_with_texture(
             std::ptr::null().offset(start * std::mem::size_of::<f32>() as isize),
         );
 
-        let a = if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
-
-            resources.text_resources.texture
-        } else {
-            500
-        };
-
         ctx.ActiveTexture(gl::TEXTURE0);
-        // ctx.BindTexture(gl::TEXTURE_2D, textures[0]);
-        ctx.BindTexture(gl::TEXTURE_2D, a);
+        ctx.BindTexture(gl::TEXTURE_2D, textures[0]);
         ctx.Uniform1i(texture_shader.texture_uniforms[0], 0);
 
         ctx.ActiveTexture(gl::TEXTURE1);
