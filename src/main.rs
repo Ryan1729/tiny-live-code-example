@@ -176,7 +176,7 @@ struct Resources {
     colour_shader: ColourShader,
     texture_shader: TextureShader,
     text_resources: TextResources,
-    text_render_command: Option<TextRenderCommand>,
+    text_render_commands: TextRenderCommands,
 }
 
 impl Resources {
@@ -301,7 +301,7 @@ impl Resources {
             texture_shader,
             textures,
             text_resources,
-            text_render_command: None,
+            text_render_commands: TextRenderCommands::new(),
         };
 
         result.set_verts(app.get_vert_vecs());
@@ -348,6 +348,121 @@ impl Resources {
     }
 }
 
+struct TextRenderCommands(
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>,
+    Option<TextRenderCommand>
+);
+
+const MAX_TEXT_RENDER_COMMANDS: u8 = 16;
+
+impl TextRenderCommands {
+    fn new() -> Self {
+        TextRenderCommands(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    fn len(&self) -> u8 {
+        for i in 0..MAX_TEXT_RENDER_COMMANDS {
+            if self[i].is_none() {
+                return i;
+            }
+        }
+
+        MAX_TEXT_RENDER_COMMANDS
+    }
+
+    fn push(&mut self, text_render_command: TextRenderCommand) {
+        let len = self.len();
+
+        debug_assert!(len <= MAX_TEXT_RENDER_COMMANDS);
+        if len <= MAX_TEXT_RENDER_COMMANDS {
+            self[len] = Some(text_render_command);
+        }
+
+    }
+}
+
+impl Index<u8> for TextRenderCommands {
+    type Output = Option<TextRenderCommand>;
+
+    fn index<'a>(&'a self, index: u8) -> &'a Option<TextRenderCommand> {
+        match index {
+            0 => &self.0,
+            1 => &self.1,
+            2 => &self.2,
+            3 => &self.3,
+            4 => &self.4,
+            5 => &self.5,
+            6 => &self.6,
+            7 => &self.7,
+            8 => &self.8,
+            9 => &self.9,
+            10 => &self.10,
+            11 => &self.11,
+            12 => &self.12,
+            13 => &self.13,
+            14 => &self.14,
+            15 => &self.15,
+            _ => panic!("invalid TextRenderCommands index"),
+        }
+    }
+}
+
+
+impl IndexMut<u8> for TextRenderCommands {
+    fn index_mut<'a>(&'a mut self, index: u8) -> &'a mut Option<TextRenderCommand> {
+        match index {
+            0 => &mut self.0,
+            1 => &mut self.1,
+            2 => &mut self.2,
+            3 => &mut self.3,
+            4 => &mut self.4,
+            5 => &mut self.5,
+            6 => &mut self.6,
+            7 => &mut self.7,
+            8 => &mut self.8,
+            9 => &mut self.9,
+            10 => &mut self.10,
+            11 => &mut self.11,
+            12 => &mut self.12,
+            13 => &mut self.13,
+            14 => &mut self.14,
+            15 => &mut self.15,
+            _ => panic!("invalid TextRenderCommands index"),
+        }
+    }
+}
+
 struct TextRenderCommand {
     char_tuple: CharTuple,
     char_count: u8,
@@ -355,6 +470,7 @@ struct TextRenderCommand {
     width_percentage: f32,
     scale: f32,
 }
+
 
 impl TextRenderCommand {
     fn new(text: &str, coords: (f32, f32), width_percentage: f32, scale: f32) -> Self {
@@ -703,24 +819,27 @@ fn main() {
             //We'd rather just store everything we need to do this in `RESOURCES`
             //and call this from `draw_text`
             {
-                if let Some(ref text_render_command) = resources.text_render_command {
+                for i in 0..resources.text_render_commands.len() {
 
-                    let screen_dim = canvas.window().drawable_size();
+                    if let Some(ref text_render_command) = resources.text_render_commands[i] {
 
-                    let text = text_render_command.get_text();
+                        let screen_dim = canvas.window().drawable_size();
 
-                    render_text(
-                        &mut text_cache,
-                        &font,
-                        screen_dim,
-                        &text,
-                        text_render_command.coords,
-                        text_render_command.width_percentage,
-                        text_render_command.scale,
-                    );
+                        let text = text_render_command.get_text();
+
+                        render_text(
+                            &mut text_cache,
+                            &font,
+                            screen_dim,
+                            &text,
+                            text_render_command.coords,
+                            text_render_command.width_percentage,
+                            text_render_command.scale,
+                        );
+                    }
+                    resources.text_render_commands[i] = None;
                 }
 
-                resources.text_render_command = None;
             }
 
             if cfg!(debug_assertions) {
@@ -982,7 +1101,7 @@ fn draw_verts_with_outline(
 
 fn draw_text(text: &str, (x, y): (f32, f32), width_percentage: f32, scale: f32) {
     if let Some(ref mut resources) = unsafe { RESOURCES.as_mut() } {
-        resources.text_render_command = Some(TextRenderCommand::new(
+        resources.text_render_commands.push(TextRenderCommand::new(
             text,
             (x, y),
             width_percentage,
