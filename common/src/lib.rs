@@ -1,6 +1,11 @@
 extern crate rand;
 
-use rand::StdRng;
+use rand::{StdRng, Rng};
+
+pub fn random_string(rng : &mut StdRng) -> String {
+    rng.gen_ascii_chars()
+        .take(6).collect()
+}
 
 pub struct Platform {
     pub draw_poly: fn(f32, f32, usize),
