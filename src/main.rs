@@ -1130,15 +1130,18 @@ fn render_text(
     colour: [f32; 4],
 ) {
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
+        //map from -1 to 1 space ("NDC") to 0 to 1 space
+        let (x01, y01) = ((x + 1.0) / 2.0, 1.0 - (y + 1.0) / 2.0);
+
         let ctx = &resources.ctx;
 
         let paragraph_width = (width_percentage * screen_width as f32) as u32;
 
         let glyphs = layout_paragraph(font, Scale::uniform(scale), paragraph_width, text, (
-            x *
+            x01 *
                 screen_width as
                     f32,
-            y *
+            y01 *
                 screen_height as
                     f32,
         ));
@@ -1529,7 +1532,7 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
     return texture;
 }
 
-//from the rusttype gpu_cache example
+// based on the rusttype gpu_cache example
 fn layout_paragraph<'a>(
     font: &'a Font,
     scale: Scale,
