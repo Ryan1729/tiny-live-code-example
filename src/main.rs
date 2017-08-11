@@ -469,11 +469,18 @@ struct TextRenderCommand {
     coords: (f32, f32),
     width_percentage: f32,
     scale: f32,
+    colour: [f32; 4],
 }
 
 
 impl TextRenderCommand {
-    fn new(text: &str, coords: (f32, f32), width_percentage: f32, scale: f32) -> Self {
+    fn new(
+        text: &str,
+        coords: (f32, f32),
+        width_percentage: f32,
+        scale: f32,
+        colour: [f32; 4],
+    ) -> Self {
         debug_assert!(text.len() <= CHAR_TUPLE_CAPACITY);
         let char_count = std::cmp::min(text.len(), CHAR_TUPLE_CAPACITY);
 
@@ -490,6 +497,7 @@ impl TextRenderCommand {
             coords,
             width_percentage,
             scale,
+            colour,
         }
     }
 
@@ -835,6 +843,7 @@ fn main() {
                             text_render_command.coords,
                             text_render_command.width_percentage,
                             text_render_command.scale,
+                            text_render_command.colour,
                         );
                     }
                     resources.text_render_commands[i] = None;
@@ -1099,13 +1108,14 @@ fn draw_verts_with_outline(
     }
 }
 
-fn draw_text(text: &str, (x, y): (f32, f32), width_percentage: f32, scale: f32) {
+fn draw_text(text: &str, (x, y): (f32, f32), width_percentage: f32, scale: f32, colour: [f32; 4]) {
     if let Some(ref mut resources) = unsafe { RESOURCES.as_mut() } {
         resources.text_render_commands.push(TextRenderCommand::new(
             text,
             (x, y),
             width_percentage,
             scale,
+            colour,
         ));
     }
 }
@@ -1117,6 +1127,7 @@ fn render_text(
     (x, y): (f32, f32),
     width_percentage: f32,
     scale: f32,
+    colour: [f32; 4],
 ) {
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         let ctx = &resources.ctx;
@@ -1164,8 +1175,6 @@ fn render_text(
         }
 
         opengl_error_check!();
-
-        let colour = [0.0, 1.0, 1.0, 1.0];
 
         #[repr(C)]
         #[derive(Copy, Clone, Debug)]

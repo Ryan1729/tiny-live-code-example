@@ -160,8 +160,20 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         (p.draw_textured_poly_with_matrix)(matrix, poly.index, 0);
     }
 
-    (p.draw_text)("Hello Text rendering!", (0.25, 0.20), 0.5, 96.0);
-    (p.draw_text)("Hello Text rendering!", (0.25, 0.0), 1.0, 96.0);
+    (p.draw_text)(
+        "Hello Text rendering!",
+        (0.25, 0.20),
+        0.5,
+        96.0,
+        [1.0, 1.0, 0.0, 1.0],
+    );
+    (p.draw_text)(
+        "Hello Text rendering!",
+        (0.25, 0.0),
+        1.0,
+        96.0,
+        [0.0, 1.0, 1.0, 0.5],
+    );
 
 
     false
