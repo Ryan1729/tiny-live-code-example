@@ -1,10 +1,11 @@
-extern crate rand;
+
 extern crate common;
+extern crate rand;
 
 use common::*;
 use common::Projection::*;
 
-use rand::{StdRng, SeedableRng, Rng};
+use rand::{Rng, SeedableRng, StdRng};
 
 #[cfg(debug_assertions)]
 #[no_mangle]

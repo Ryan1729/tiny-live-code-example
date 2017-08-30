@@ -1,6 +1,6 @@
 extern crate rand;
 
-use rand::{StdRng, Rng};
+use rand::{Rng, StdRng};
 
 pub fn random_string(rng: &mut StdRng) -> String {
     rng.gen_ascii_chars().take(6).collect()

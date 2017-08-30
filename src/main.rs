@@ -30,7 +30,7 @@ use std::str;
 extern crate rusttype;
 extern crate unicode_normalization;
 
-use rusttype::{FontCollection, Font, Scale, point, vector, PositionedGlyph};
+use rusttype::{point, vector, Font, FontCollection, PositionedGlyph, Scale};
 
 use common::*;
 
@@ -199,7 +199,6 @@ impl Resources {
             ctx.ClearColor(brightness, brightness, brightness, 1.0);
             ctx.Enable(gl::BLEND);
             ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
-
         }
 
         let colour_shader = {
@@ -310,7 +309,6 @@ impl Resources {
     }
 
     fn set_verts(&mut self, vert_vecs: Vec<Vec<f32>>) {
-
         let (verts, vert_ranges, vert_ranges_len) = get_verts_and_ranges(vert_vecs);
 
         unsafe {
@@ -330,17 +328,14 @@ impl Resources {
             (0..verts.len()).map(|x| x as gl::types::GLushort).collect();
 
         unsafe {
-            self.ctx.BindBuffer(
-                gl::ELEMENT_ARRAY_BUFFER,
-                self.index_buffer,
-            );
+            self.ctx
+                .BindBuffer(gl::ELEMENT_ARRAY_BUFFER, self.index_buffer);
             self.ctx.BufferData(
                 gl::ELEMENT_ARRAY_BUFFER,
                 (indices.len() * std::mem::size_of::<gl::types::GLushort>()) as _,
                 std::mem::transmute(indices.as_ptr()),
                 gl::DYNAMIC_DRAW,
             );
-
         };
 
         self.vert_ranges = vert_ranges;
@@ -364,7 +359,7 @@ struct TextRenderCommands(
     Option<TextRenderCommand>,
     Option<TextRenderCommand>,
     Option<TextRenderCommand>,
-    Option<TextRenderCommand>
+    Option<TextRenderCommand>,
 );
 
 const MAX_TEXT_RENDER_COMMANDS: u8 = 16;
@@ -408,7 +403,6 @@ impl TextRenderCommands {
         if len <= MAX_TEXT_RENDER_COMMANDS {
             self[len] = Some(text_render_command);
         }
-
     }
 }
 
@@ -547,7 +541,7 @@ struct CharTuple(
     char,
     char,
     char,
-    char
+    char,
 );
 
 use std::ops::{Index, IndexMut};
@@ -755,10 +749,12 @@ fn main() {
         let ctx = gl::Gl::load_with(|name| video_subsystem.gl_get_proc_address(name) as *const _);
         canvas.window().gl_set_context_to_current().unwrap();
 
-        RESOURCES = Resources::new(&app, ctx, canvas.window().drawable_size(), (
-            cache_width,
-            cache_height,
-        ))
+        RESOURCES = Resources::new(
+            &app,
+            ctx,
+            canvas.window().drawable_size(),
+            (cache_width, cache_height),
+        )
     }
 
     let mut state = app.new_state();
@@ -807,12 +803,12 @@ fn main() {
             for event in event_pump.poll_iter() {
                 match event {
                     Event::Quit { .. } => events.push(common::Event::Quit),
-                    Event::KeyDown { keycode: Some(kc), .. } => {
-                        events.push(common::Event::KeyDown(unsafe { std::mem::transmute(kc) }))
-                    }
-                    Event::KeyUp { keycode: Some(kc), .. } => {
-                        events.push(common::Event::KeyUp(unsafe { std::mem::transmute(kc) }))
-                    }
+                    Event::KeyDown {
+                        keycode: Some(kc), ..
+                    } => events.push(common::Event::KeyDown(unsafe { std::mem::transmute(kc) })),
+                    Event::KeyUp {
+                        keycode: Some(kc), ..
+                    } => events.push(common::Event::KeyUp(unsafe { std::mem::transmute(kc) })),
                     _ => {}
                 }
             }
@@ -828,9 +824,7 @@ fn main() {
             //and call this from `draw_text`
             {
                 for i in 0..resources.text_render_commands.len() {
-
                     if let Some(ref text_render_command) = resources.text_render_commands[i] {
-
                         let screen_dim = canvas.window().drawable_size();
 
                         let text = text_render_command.get_text();
@@ -848,7 +842,6 @@ fn main() {
                     }
                     resources.text_render_commands[i] = None;
                 }
-
             }
 
             if cfg!(debug_assertions) {
@@ -865,20 +858,15 @@ fn main() {
 
             window.gl_swap_window();
 
-            if let Some(sleep_time) = frame_duration.checked_sub(
-                std::time::Instant::now().duration_since(
-                    start,
-                ),
-            )
+            if let Some(sleep_time) =
+                frame_duration.checked_sub(std::time::Instant::now().duration_since(start))
             {
                 std::thread::sleep(sleep_time);
             }
-
         }
     } else {
         println!("Could not open window.");
     }
-
 }
 
 // these `draw_` functions should probably batch draw calls to minimize shader switching,
@@ -1040,7 +1028,6 @@ fn draw_verts_with_texture(
         ctx.StencilFunc(gl::EQUAL, 1, 1);
         ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
         ctx.Disable(gl::STENCIL_TEST);
-
     }
 }
 
@@ -1137,14 +1124,13 @@ fn render_text(
 
         let paragraph_width = (width_percentage * screen_width as f32) as u32;
 
-        let glyphs = layout_paragraph(font, Scale::uniform(scale), paragraph_width, text, (
-            x01 *
-                screen_width as
-                    f32,
-            y01 *
-                screen_height as
-                    f32,
-        ));
+        let glyphs = layout_paragraph(
+            font,
+            Scale::uniform(scale),
+            paragraph_width,
+            text,
+            (x01 * screen_width as f32, y01 * screen_height as f32),
+        );
         for glyph in &glyphs {
             text_cache.queue_glyph(0, glyph.clone());
         }
@@ -1191,55 +1177,55 @@ fn render_text(
 
         let verts: Vec<_> = glyphs
             .iter()
-            .flat_map(|g| if let Ok(Some((uv_rect, screen_rect))) =
-                text_cache.rect_for(0, g)
-            {
-                let gl_rect = rusttype::Rect {
-                    min: origin +
-                        (vector(
-                            screen_rect.min.x as f32 / screen_width as f32 - 0.5,
-                            1.0 - screen_rect.min.y as f32 / screen_height as f32 - 0.5,
-                        )) * 2.0,
-                    max: origin +
-                        (vector(
-                            screen_rect.max.x as f32 / screen_width as f32 - 0.5,
-                            1.0 - screen_rect.max.y as f32 / screen_height as f32 - 0.5,
-                        )) * 2.0,
-                };
-                vec![
-                    Vertex {
-                        position: [gl_rect.min.x, gl_rect.max.y],
-                        tex_coords: [uv_rect.min.x, uv_rect.max.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.min.x, gl_rect.min.y],
-                        tex_coords: [uv_rect.min.x, uv_rect.min.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.max.x, gl_rect.min.y],
-                        tex_coords: [uv_rect.max.x, uv_rect.min.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.max.x, gl_rect.min.y],
-                        tex_coords: [uv_rect.max.x, uv_rect.min.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.max.x, gl_rect.max.y],
-                        tex_coords: [uv_rect.max.x, uv_rect.max.y],
-                        colour,
-                    },
-                    Vertex {
-                        position: [gl_rect.min.x, gl_rect.max.y],
-                        tex_coords: [uv_rect.min.x, uv_rect.max.y],
-                        colour,
-                    },
-                ]
-            } else {
-                Vec::new()
+            .flat_map(|g| {
+                if let Ok(Some((uv_rect, screen_rect))) = text_cache.rect_for(0, g) {
+                    let gl_rect = rusttype::Rect {
+                        min: origin +
+                            (vector(
+                                screen_rect.min.x as f32 / screen_width as f32 - 0.5,
+                                1.0 - screen_rect.min.y as f32 / screen_height as f32 - 0.5,
+                            )) * 2.0,
+                        max: origin +
+                            (vector(
+                                screen_rect.max.x as f32 / screen_width as f32 - 0.5,
+                                1.0 - screen_rect.max.y as f32 / screen_height as f32 - 0.5,
+                            )) * 2.0,
+                    };
+                    vec![
+                        Vertex {
+                            position: [gl_rect.min.x, gl_rect.max.y],
+                            tex_coords: [uv_rect.min.x, uv_rect.max.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.min.x, gl_rect.min.y],
+                            tex_coords: [uv_rect.min.x, uv_rect.min.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.max.x, gl_rect.min.y],
+                            tex_coords: [uv_rect.max.x, uv_rect.min.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.max.x, gl_rect.min.y],
+                            tex_coords: [uv_rect.max.x, uv_rect.min.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.max.x, gl_rect.max.y],
+                            tex_coords: [uv_rect.max.x, uv_rect.max.y],
+                            colour,
+                        },
+                        Vertex {
+                            position: [gl_rect.min.x, gl_rect.max.y],
+                            tex_coords: [uv_rect.min.x, uv_rect.max.y],
+                            colour,
+                        },
+                    ]
+                } else {
+                    Vec::new()
+                }
             })
             .collect();
 
@@ -1300,8 +1286,6 @@ fn render_text(
             ctx.Disable(gl::STENCIL_TEST);
             ctx.BindTexture(gl::TEXTURE_2D, 0);
         }
-
-
     }
 }
 
@@ -1313,6 +1297,8 @@ struct ColourShader {
     colour_uniform: gl::types::GLsizei,
 }
 
+
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static UNTEXTURED_VS_SRC: &'static str = "#version 120\n\
     attribute vec2 position;\n\
     uniform mat4 matrix;\n\
@@ -1320,6 +1306,7 @@ static UNTEXTURED_VS_SRC: &'static str = "#version 120\n\
     gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
     }";
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static UNTEXTURED_FS_SRC: &'static str = "#version 120\n\
     uniform vec4 colour;\n\
     void main() {\n\
@@ -1334,6 +1321,7 @@ struct TextureShader {
     texture_index_uniform: gl::types::GLsizei,
 }
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static TEXTURED_VS_SRC: &'static str = "#version 120\n\
     attribute vec2 position;\n\
     uniform mat4 matrix;\n\
@@ -1343,6 +1331,7 @@ static TEXTURED_VS_SRC: &'static str = "#version 120\n\
         gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
     }";
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 //using a spritesheet and calulating uvs is apparently the optimized way,
 //but this will do for now.
 static TEXTURED_FS_SRC: &'static str = "#version 120\n\
@@ -1365,6 +1354,7 @@ struct TextShader {
     texture_uniform: gl::types::GLsizei,
 }
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static FONT_VS_SRC: &'static str = "#version 120\n\
     attribute vec2 position;\n\
     attribute vec2 texcoord;\n\
@@ -1377,6 +1367,7 @@ static FONT_VS_SRC: &'static str = "#version 120\n\
         v_colour = colour;\n\
     }";
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static FONT_FS_SRC: &'static str = "#version 120\n\
     uniform sampler2D tex;\n\
     varying vec2 v_texcoord;\n\
@@ -1515,9 +1506,9 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
                         external_format,
                         data_type,
                         (match pixels {
-                             image::DecodingResult::U8(v) => v.as_ptr() as _,
-                             image::DecodingResult::U16(v) => v.as_ptr() as _,
-                         }),
+                            image::DecodingResult::U8(v) => v.as_ptr() as _,
+                            image::DecodingResult::U16(v) => v.as_ptr() as _,
+                        }),
                     );
                 }
             }
@@ -1525,9 +1516,6 @@ fn make_texture_from_png(ctx: &gl::Gl, filename: &str) -> gl::types::GLuint {
                 return 0;
             }
         }
-
-
-
     }
     return texture;
 }
