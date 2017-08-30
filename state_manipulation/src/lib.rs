@@ -45,6 +45,7 @@ fn make_state(rng: StdRng) -> State {
     state
 }
 
+const TRANSLATION_SCALE: f32 = 0.0625;
 
 #[no_mangle]
 //returns true if quit requested
@@ -53,9 +54,7 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         println!("{:?}", *event);
 
         match *event {
-            Event::Quit |
-            Event::KeyDown(Keycode::Escape) |
-            Event::KeyDown(Keycode::F10) => {
+            Event::Quit | Event::KeyDown(Keycode::Escape) | Event::KeyDown(Keycode::F10) => {
                 return true;
             }
             Event::KeyDown(Keycode::Space) => {
@@ -66,16 +65,16 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                 add_random_poly(state);
             }
             Event::KeyDown(Keycode::Up) => {
-                state.cam_y += 0.0625;
+                state.cam_y += state.zoom * TRANSLATION_SCALE;
             }
             Event::KeyDown(Keycode::Down) => {
-                state.cam_y -= 0.0625;
+                state.cam_y -= state.zoom * TRANSLATION_SCALE;
             }
             Event::KeyDown(Keycode::Right) => {
-                state.cam_x += 0.0625;
+                state.cam_x += state.zoom * TRANSLATION_SCALE;
             }
             Event::KeyDown(Keycode::Left) => {
-                state.cam_x -= 0.0625;
+                state.cam_x -= state.zoom * TRANSLATION_SCALE;
             }
             Event::KeyDown(Keycode::Num0) => {
                 state.cam_x = 0.0;
@@ -87,6 +86,9 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
             }
             Event::KeyDown(Keycode::S) => {
                 state.zoom /= 1.25;
+                if state.zoom == 0.0 {
+                    state.zoom = std::f32::MIN_POSITIVE / TRANSLATION_SCALE;
+                }
             }
             _ => {}
         }
