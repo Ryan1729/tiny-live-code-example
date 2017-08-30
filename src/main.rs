@@ -15,9 +15,7 @@ use open_gl_bindings::gl;
 
 use sdl2::event::Event;
 
-use std::io;
 use std::f32;
-use std::io::prelude::*;
 use std::fs::File;
 
 extern crate image;
@@ -166,6 +164,10 @@ static mut RESOURCES: Option<Resources> = None;
 
 type Textures = [gl::types::GLuint; 2];
 
+//this includes the default framebuffer
+const FRAMEBUFFER_COUNT: usize = 2;
+type FrameBufferHandles = [gl::types::GLuint; FRAMEBUFFER_COUNT];
+
 struct Resources {
     ctx: gl::Gl,
     vertex_buffer: gl::types::GLuint,
@@ -175,6 +177,9 @@ struct Resources {
     textures: Textures,
     colour_shader: ColourShader,
     texture_shader: TextureShader,
+    frame_buffers: FrameBufferHandles,
+    frame_buffer_textures: FrameBufferHandles,
+    // frame_buffer_render_buffers: FrameBufferHandles,
     text_resources: TextResources,
     text_render_commands: TextRenderCommands,
 }
@@ -186,19 +191,81 @@ impl Resources {
         (width, height): (u32, u32),
         cache_dim: (u32, u32),
     ) -> Option<Self> {
+        let mut frame_buffers = [0; FRAMEBUFFER_COUNT];
+        let mut frame_buffer_textures = [0; FRAMEBUFFER_COUNT];
+        let mut frame_buffer_render_buffers = [0; FRAMEBUFFER_COUNT];
+
         unsafe {
             ctx.Viewport(0, 0, width as _, height as _);
 
-            ctx.MatrixMode(gl::PROJECTION);
-            ctx.LoadIdentity();
-
-            ctx.MatrixMode(gl::MODELVIEW);
-            ctx.LoadIdentity();
-
-            let brightness = 25.0 / 255.0;
-            ctx.ClearColor(brightness, brightness, brightness, 1.0);
+            ctx.Enable(gl::TEXTURE_2D);
             ctx.Enable(gl::BLEND);
-            ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+            reset_blend_func(&ctx);
+
+            //create framebuffers
+            ctx.GenFramebuffers(1, frame_buffers.as_mut_ptr().offset(1));
+
+            ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffers[1]);
+
+            ctx.GenTextures(1, frame_buffer_textures.as_mut_ptr().offset(1));
+
+            let texture_handle = frame_buffer_textures[1];
+
+            ctx.BindTexture(gl::TEXTURE_2D, texture_handle);
+
+            ctx.TexImage2D(
+                gl::TEXTURE_2D,
+                0,
+                gl::RGBA as _,
+                width as _,
+                height as _,
+                0,
+                gl::RGBA,
+                gl::UNSIGNED_BYTE,
+                std::ptr::null(),
+            );
+
+            ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as _);
+            ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as _);
+            ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, gl::CLAMP_TO_EDGE as _);
+            ctx.TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, gl::CLAMP_TO_EDGE as _);
+
+            ctx.FramebufferTexture2D(
+                gl::FRAMEBUFFER,
+                gl::COLOR_ATTACHMENT0,
+                gl::TEXTURE_2D,
+                texture_handle,
+                0,
+            );
+
+            // unbind
+            ctx.BindTexture(gl::TEXTURE_2D, 0);
+
+            ctx.GenRenderbuffers(1, frame_buffer_render_buffers.as_mut_ptr().offset(1));
+            ctx.BindRenderbuffer(gl::RENDERBUFFER, frame_buffer_render_buffers[1]);
+            ctx.RenderbufferStorage(
+                gl::RENDERBUFFER,
+                gl::DEPTH24_STENCIL8,
+                width as _,
+                height as _,
+            );
+
+            if cfg!(debug_assertions) {
+                for &frame_buffer in frame_buffers.iter() {
+                    ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+
+                    let status = ctx.CheckFramebufferStatus(gl::FRAMEBUFFER);
+                    debug_assert!(
+                        status == gl::FRAMEBUFFER_COMPLETE,
+                        "CheckFramebufferStatus returned {0:x}",
+                        status
+                    );
+                }
+            }
+
+            clear_all(&ctx, &frame_buffers);
+
+            ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
         }
 
         let colour_shader = {
@@ -248,16 +315,25 @@ impl Resources {
                 ]
             };
 
+            let texture_xywh_uniform = unsafe {
+                ctx.GetUniformLocation(program, CString::new("texture_xywh").unwrap().as_ptr())
+            };
+
             let texture_index_uniform = unsafe {
                 ctx.GetUniformLocation(program, CString::new("texture_index").unwrap().as_ptr())
             };
+
+            let tint_uniform =
+                unsafe { ctx.GetUniformLocation(program, CString::new("tint").unwrap().as_ptr()) };
 
             TextureShader {
                 program,
                 pos_attr,
                 matrix_uniform,
                 texture_uniforms,
+                texture_xywh_uniform,
                 texture_index_uniform,
+                tint_uniform,
             }
         };
 
@@ -269,6 +345,10 @@ impl Resources {
             make_texture_from_png(&ctx, "images/cardBack_blue.png"),
             make_texture_from_png(&ctx, "images/cardBack_green.png"),
         ];
+
+        debug_assert!(frame_buffers[1] != 0);
+        debug_assert!(frame_buffer_textures[1] != 0);
+        debug_assert!(frame_buffer_render_buffers[1] != 0);
 
         let vertex_buffer = unsafe {
             let mut buffer = 0;
@@ -299,6 +379,9 @@ impl Resources {
             colour_shader,
             texture_shader,
             textures,
+            frame_buffers,
+            frame_buffer_textures,
+            // frame_buffer_render_buffers,
             text_resources,
             text_render_commands: TextRenderCommands::new(),
         };
@@ -773,6 +856,7 @@ fn main() {
         draw_textured_poly,
         draw_textured_poly_with_matrix,
         draw_text,
+        draw_layer,
         set_verts,
     };
 
@@ -869,9 +953,17 @@ fn main() {
     }
 }
 
+fn get_frame_buffer(resources: &Resources, frame_buffer_index: usize) -> gl::types::GLuint {
+    resources.frame_buffers[if frame_buffer_index < FRAMEBUFFER_COUNT {
+                                frame_buffer_index
+                            } else {
+                                0
+                            }]
+}
+
 // these `draw_` functions should probably batch draw calls to minimize shader switching,
 // but I'll be able to provide the same API and change to that later so it can wait
-fn draw_poly_with_matrix(world_matrix: [f32; 16], index: usize) {
+fn draw_poly_with_matrix(world_matrix: [f32; 16], poly_index: usize, frame_buffer_index: usize) {
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         unsafe {
             resources.ctx.UseProgram(resources.colour_shader.program);
@@ -883,8 +975,9 @@ fn draw_poly_with_matrix(world_matrix: [f32; 16], index: usize) {
                 world_matrix.as_ptr() as _,
             );
         }
+        let frame_buffer = get_frame_buffer(resources, frame_buffer_index);
 
-        let (start, end) = resources.vert_ranges[index];
+        let (start, end) = resources.vert_ranges[poly_index];
 
         draw_verts_with_outline(
             &resources.ctx,
@@ -892,11 +985,12 @@ fn draw_poly_with_matrix(world_matrix: [f32; 16], index: usize) {
             ((end + 1 - start) / 2) as _,
             resources.vertex_buffer,
             &resources.colour_shader,
+            frame_buffer,
         );
     }
 }
 
-fn draw_poly(x: f32, y: f32, index: usize) {
+fn draw_poly(x: f32, y: f32, index: usize, frame_buffer_index: usize) {
     let mut world_matrix: [f32; 16] = [
         1.0,
         0.0,
@@ -919,10 +1013,16 @@ fn draw_poly(x: f32, y: f32, index: usize) {
     world_matrix[12] = x;
     world_matrix[13] = y;
 
-    draw_poly_with_matrix(world_matrix, index);
+    draw_poly_with_matrix(world_matrix, index, frame_buffer_index);
 }
 
-fn draw_textured_poly(x: f32, y: f32, poly_index: usize, texture_index: gl::types::GLint) {
+fn draw_textured_poly(
+    x: f32,
+    y: f32,
+    poly_index: usize,
+    texture_spec: TextureSpec,
+    frame_buffer_index: usize,
+) {
     let mut world_matrix: [f32; 16] = [
         1.0,
         0.0,
@@ -945,14 +1045,18 @@ fn draw_textured_poly(x: f32, y: f32, poly_index: usize, texture_index: gl::type
     world_matrix[12] = x;
     world_matrix[13] = y;
 
-    draw_textured_poly_with_matrix(world_matrix, poly_index, texture_index);
+    draw_textured_poly_with_matrix(world_matrix, poly_index, texture_spec, frame_buffer_index);
 }
 
 fn draw_textured_poly_with_matrix(
     world_matrix: [f32; 16],
     poly_index: usize,
-    texture_index: gl::types::GLint,
-) {
+    (texture_x, texture_y, texture_w, texture_h, texture_index, tint_r,
+tint_g,
+tint_b,
+tint_a): TextureSpec,
+frame_buffer_index: usize
+){
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         unsafe {
             resources.ctx.UseProgram(resources.texture_shader.program);
@@ -965,6 +1069,8 @@ fn draw_textured_poly_with_matrix(
             );
         }
 
+        let frame_buffer = get_frame_buffer(resources, frame_buffer_index);
+
         let (start, end) = resources.vert_ranges[poly_index];
 
         draw_verts_with_texture(
@@ -974,7 +1080,16 @@ fn draw_textured_poly_with_matrix(
             resources.vertex_buffer,
             &resources.texture_shader,
             &resources.textures,
+            texture_x,
+            texture_y,
+            texture_w,
+            texture_h,
             texture_index,
+            tint_r,
+            tint_g,
+            tint_b,
+            tint_a,
+            frame_buffer,
         );
     }
 }
@@ -987,9 +1102,20 @@ fn draw_verts_with_texture(
     vertex_buffer: gl::types::GLuint,
     texture_shader: &TextureShader,
     textures: &Textures,
+    texture_x: gl::types::GLfloat,
+    texture_y: gl::types::GLfloat,
+    texture_w: gl::types::GLfloat,
+    texture_h: gl::types::GLfloat,
     texture_index: gl::types::GLint,
+    tint_r: gl::types::GLfloat,
+    tint_g: gl::types::GLfloat,
+    tint_b: gl::types::GLfloat,
+    tint_a: gl::types::GLfloat,
+    frame_buffer: gl::types::GLuint,
 ) {
     unsafe {
+        ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+
         ctx.UseProgram(texture_shader.program);
 
         ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
@@ -1011,23 +1137,105 @@ fn draw_verts_with_texture(
         ctx.BindTexture(gl::TEXTURE_2D, textures[1]);
         ctx.Uniform1i(texture_shader.texture_uniforms[1], 1);
 
-        ctx.Clear(gl::STENCIL_BUFFER_BIT);
-
-        ctx.Enable(gl::STENCIL_TEST);
-        ctx.ColorMask(gl::FALSE, gl::FALSE, gl::FALSE, gl::FALSE);
-        ctx.StencilOp(gl::INVERT, gl::INVERT, gl::INVERT);
-        ctx.StencilFunc(gl::ALWAYS, 0x1, 0x1);
-
         ctx.Uniform1i(texture_shader.texture_index_uniform, texture_index);
 
+        ctx.Uniform4f(
+            texture_shader.texture_xywh_uniform,
+            texture_x,
+            texture_y,
+            texture_w,
+            texture_h,
+        );
+
+        ctx.Uniform4f(texture_shader.tint_uniform, tint_r, tint_g, tint_b, tint_a);
+
         ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
 
-        ctx.ColorMask(gl::TRUE, gl::TRUE, gl::TRUE, gl::TRUE);
+        ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
+    }
+}
 
-        ctx.StencilOp(gl::ZERO, gl::ZERO, gl::ZERO);
-        ctx.StencilFunc(gl::EQUAL, 1, 1);
-        ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
-        ctx.Disable(gl::STENCIL_TEST);
+fn draw_layer(frame_buffer_index: usize, alpha: f32) {
+    if let Some(ref mut resources) = unsafe { RESOURCES.as_mut() } {
+        let frame_buffer = get_frame_buffer(resources, frame_buffer_index);
+        let textures = resources.textures;
+        let texture_shader = &resources.texture_shader;
+        let vertex_buffer = resources.vertex_buffer;
+        let ctx = &resources.ctx;
+
+        let (start, end) = resources.vert_ranges[1];
+        let vert_count = ((end + 1 - start) / 2) as _;
+
+        if frame_buffer != 0 {
+            unsafe {
+                ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
+                ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+
+                let world_matrix: [f32; 16] = [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                ];
+
+                resources.ctx.UniformMatrix4fv(
+                    resources.texture_shader.matrix_uniform as _,
+                    1,
+                    gl::FALSE,
+                    world_matrix.as_ptr() as _,
+                );
+
+
+                ctx.UseProgram(texture_shader.program);
+
+                ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
+                ctx.EnableVertexAttribArray(texture_shader.pos_attr as _);
+                ctx.VertexAttribPointer(
+                    texture_shader.pos_attr as _,
+                    2,
+                    gl::FLOAT,
+                    gl::FALSE as _,
+                    0,
+                    std::ptr::null().offset(start as isize * std::mem::size_of::<f32>() as isize),
+                );
+
+                ctx.ActiveTexture(gl::TEXTURE0);
+                ctx.BindTexture(
+                    gl::TEXTURE_2D,
+                    resources.frame_buffer_textures[frame_buffer_index],
+                );
+                ctx.Uniform1i(texture_shader.texture_uniforms[0], 0);
+
+                ctx.ActiveTexture(gl::TEXTURE1);
+                ctx.BindTexture(gl::TEXTURE_2D, textures[1]);
+                ctx.Uniform1i(texture_shader.texture_uniforms[1], 1);
+
+                ctx.Uniform1i(texture_shader.texture_index_uniform, 0);
+
+                //1 - y = (y * -1) + 1 so this flips the y texture coord
+                ctx.Uniform4f(texture_shader.texture_xywh_uniform, 0.0, 1.0, 1.0, -1.0);
+
+                ctx.Uniform4f(texture_shader.tint_uniform, 0.0, 0.0, 0.0, alpha - 1.0);
+
+                ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
+
+                ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
+
+                reset_blend_func(ctx);
+            }
+        }
     }
 }
 
@@ -1037,14 +1245,46 @@ fn set_verts(vert_vecs: Vec<Vec<f32>>) {
     }
 }
 
+unsafe fn begin_using_frame_buffer(ctx: &gl::Gl, frame_buffer: gl::types::GLuint) {
+    ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+}
+unsafe fn end_using_frame_buffer(ctx: &gl::Gl) {
+    ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
+}
+
+unsafe fn reset_blend_func(ctx: &gl::Gl) {
+    ctx.BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+    // ctx.BlendFunc(gl::ONE, gl::ONE_MINUS_SRC_ALPHA);
+}
+
+unsafe fn clear_all(ctx: &gl::Gl, frame_buffers: &FrameBufferHandles) {
+    let brightness = 25.0 / 255.0;
+    for i in 0..frame_buffers.len() {
+        let frame_buffer = frame_buffers[i];
+        ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
+
+        if i == 0 {
+            ctx.ClearColor(brightness, brightness, brightness, 1.0);
+        } else {
+            ctx.ClearColor(0.0, 0.0, 0.0, 0.0);
+        }
+        ctx.Clear(
+            gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
+        );
+    }
+}
+
 fn draw_verts_with_outline(
     ctx: &gl::Gl,
     start: isize,
     vert_count: gl::types::GLsizei,
     vertex_buffer: gl::types::GLuint,
     colour_shader: &ColourShader,
+    frame_buffer: gl::types::GLuint,
 ) {
     unsafe {
+        begin_using_frame_buffer(ctx, frame_buffer);
+
         ctx.UseProgram(colour_shader.program);
 
         ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
@@ -1092,6 +1332,8 @@ fn draw_verts_with_outline(
             1.0,
         );
         ctx.DrawArrays(gl::LINE_STRIP, 0, vert_count);
+
+        end_using_frame_buffer(ctx);
     }
 }
 
@@ -1318,33 +1560,42 @@ struct TextureShader {
     pos_attr: gl::types::GLsizei,
     matrix_uniform: gl::types::GLsizei,
     texture_uniforms: [gl::types::GLsizei; 2],
+    texture_xywh_uniform: gl::types::GLsizei,
     texture_index_uniform: gl::types::GLsizei,
+    tint_uniform: gl::types::GLsizei,
 }
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
+    #[cfg_attr(rustfmt, rustfmt_skip)]
+//calculating the uvs here might be slower than passing them in.
+//Then again, maybe this is faster because of better memory badwidth.
+//We'll profile if it becomes a problem.
 static TEXTURED_VS_SRC: &'static str = "#version 120\n\
-    attribute vec2 position;\n\
-    uniform mat4 matrix;\n\
-    varying vec2 texcoord;\n\
-    void main() {\n\
-        texcoord = position * vec2(-0.5) + vec2(0.5);
-        gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
-    }";
+        attribute vec2 position;\n\
+        uniform mat4 matrix;\n\
+        uniform vec4 texture_xywh;\n\
+        varying vec2 texcoord;\n\
+        void main() {\n\
+            vec2 corner = vec2(clamp(position.x, -0.5, 0.5), position.y * -0.5) + vec2(0.5);
+            texcoord = corner * texture_xywh.zw + texture_xywh.xy;
+            gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
+        }";
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-//using a spritesheet and calulating uvs is apparently the optimized way,
-//but this will do for now.
+    #[cfg_attr(rustfmt, rustfmt_skip)]
 static TEXTURED_FS_SRC: &'static str = "#version 120\n\
-    uniform sampler2D textures[2];\n\
-    uniform int texture_index;\n\
-    varying vec2 texcoord;\n\
-    void main() {\n\
-        if (texture_index == 1) {
-            gl_FragColor = texture2D(textures[1], texcoord);\n\
-        } else {
-            gl_FragColor = texture2D(textures[0], texcoord);\n\
-        }
-    }";
+        uniform sampler2D textures[2];\n\
+        uniform int texture_index;\n\
+        uniform vec4 tint;\n\
+        varying vec2 texcoord;\n\
+        void main() {\n\
+            vec4 tex;
+            if (texture_index == 1) {
+                tex = texture2D(textures[1], texcoord);\n\
+            } else {
+                tex = texture2D(textures[0], texcoord);\n\
+            }
+
+            gl_FragColor = tex + tint * tex.a;
+        }";
 
 struct TextShader {
     program: gl::types::GLuint,

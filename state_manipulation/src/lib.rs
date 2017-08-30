@@ -1,4 +1,3 @@
-
 extern crate common;
 extern crate rand;
 
@@ -35,10 +34,13 @@ pub fn new_state() -> State {
 fn make_state(rng: StdRng) -> State {
     let mut state = State {
         rng,
-        polys: Vec::new(),
         cam_x: 0.0,
         cam_y: 0.0,
         zoom: 1.0,
+        polys: Vec::new(),
+        tint_r: 0.1,
+        tint_g: 0.0,
+        tint_b: 0.0,
     };
 
     add_random_poly(&mut state);
@@ -137,6 +139,40 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
     let view = mat4x4_mul(&camera, &projection);
 
+    const ATTRACTOR_SCALE: f32 = 64.0;
+
+    let (tint_r, tint_g, tint_b) = {
+        let (x, y, z) = (
+            state.tint_r * ATTRACTOR_SCALE,
+            state.tint_g * ATTRACTOR_SCALE,
+            state.tint_b * ATTRACTOR_SCALE,
+        );
+
+        //Lorentz Attractor
+
+        let a = 10.0;
+
+        let b = 28.0;
+
+        let c = 8.0 / 3.0;
+
+        let t = 1.0 / 256.0;
+
+        let xt = x + t * a * (y - x);
+
+        let yt = y + t * (x * (b - z) - y);
+
+        let zt = z + t * (x * y - c * z);
+
+        (
+            xt / ATTRACTOR_SCALE,
+            yt / ATTRACTOR_SCALE,
+            zt / ATTRACTOR_SCALE,
+        )
+    };
+
+    let texture_spec = (0.0, 0.0, 1.0, 1.0, 0, tint_r, tint_g, tint_b, 0.0);
+
     for poly in state.polys.iter() {
         let world_matrix = [
             1.0,
@@ -159,8 +195,11 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
         let matrix = mat4x4_mul(&world_matrix, &view);
 
-        // (p.draw_poly_with_matrix)(matrix, poly.index);
-        (p.draw_textured_poly_with_matrix)(matrix, poly.index, 0);
+        (p.draw_textured_poly_with_matrix)(matrix, poly.index, texture_spec, 0);
+
+        state.tint_r = tint_r;
+        state.tint_g = tint_g;
+        state.tint_b = tint_b;
     }
 
     (p.draw_text)(
@@ -177,6 +216,8 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         96.0,
         [0.0, 1.0, 1.0, 0.5],
     );
+
+
 
 
     false

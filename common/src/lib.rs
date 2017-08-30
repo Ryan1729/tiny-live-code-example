@@ -7,20 +7,25 @@ pub fn random_string(rng: &mut StdRng) -> String {
 }
 
 pub struct Platform {
-    pub draw_poly: fn(f32, f32, usize),
-    pub draw_poly_with_matrix: fn([f32; 16], usize),
-    pub draw_textured_poly: fn(f32, f32, usize, i32),
-    pub draw_textured_poly_with_matrix: fn([f32; 16], usize, i32),
+    pub draw_poly: fn(f32, f32, usize, usize),
+    pub draw_poly_with_matrix: fn([f32; 16], usize, usize),
+    pub draw_textured_poly: fn(f32, f32, usize, TextureSpec, usize),
+    pub draw_textured_poly_with_matrix: fn([f32; 16], usize, TextureSpec, usize),
     pub draw_text: fn(&str, (f32, f32), f32, f32, [f32; 4]),
+    pub draw_layer: fn(usize, f32),
     pub set_verts: fn(Vec<Vec<f32>>),
 }
 
 pub struct State {
     pub rng: StdRng,
-    pub polys: Vec<Polygon>,
     pub cam_x: f32,
     pub cam_y: f32,
     pub zoom: f32,
+    // demo related
+    pub polys: Vec<Polygon>,
+    pub tint_r: f32,
+    pub tint_g: f32,
+    pub tint_b: f32,
 }
 
 pub struct Polygon {
@@ -36,6 +41,8 @@ pub enum Event {
     KeyDown(Keycode),
     KeyUp(Keycode),
 }
+
+pub type TextureSpec = (f32, f32, f32, f32, i32, f32, f32, f32, f32);
 
 pub struct ProjectionSpec {
     pub top: f32,
