@@ -297,25 +297,12 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
         }
     }
 
-    let layer = 1;
-    //
-    // (p.draw_poly_with_matrix)(IDENTITY_MAT4X4, 5, layer);
-    // (p.draw_poly_with_matrix)(scale_translation(0.25, 0.5, 0.0625), 4, layer);
-    // (p.draw_poly_with_matrix)(scale_translation(0.25, -0.5, -0.0625), 4, layer);
-    //
-    // (p.draw_poly_with_matrix)(scale_translation(0.0625, 0.0, 1.0 - 0.25), 6, 1);
 
-    // (p.draw_text)(
-    //     "Hello Layered rendering!",
-    //     (0.0, 0.05),
-    //     1.0,
-    //     96.0,
-    //     [1.0, 0.0, 1.0, 0.5],
-    //     1,
-    // );
-
-    let texture_spec = (0.05, 0.05, 0.95, 0.95, 1, 0.0, 0.0, 0.0, 0.0);
-    (p.draw_textured_poly_with_matrix)(camera, 1, texture_spec, 0);
+    {
+        let layer = 1;
+        let texture_spec = (0.05, 0.05, 0.95, 0.95, 1, 0.0, 0.0, 0.0, 0.0);
+        (p.draw_textured_poly_with_matrix)(camera, 1, texture_spec, layer);
+    }
 
 
     (p.draw_layer)(1, state.layer_alpha);
