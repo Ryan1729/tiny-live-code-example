@@ -547,6 +547,7 @@ struct TextRenderCommand {
     width_percentage: f32,
     scale: f32,
     colour: [f32; 4],
+    frame_buffer_index: usize,
 }
 
 
@@ -557,6 +558,7 @@ impl TextRenderCommand {
         width_percentage: f32,
         scale: f32,
         colour: [f32; 4],
+        frame_buffer_index: usize,
     ) -> Self {
         debug_assert!(text.len() <= CHAR_TUPLE_CAPACITY);
         let char_count = std::cmp::min(text.len(), CHAR_TUPLE_CAPACITY);
@@ -575,9 +577,9 @@ impl TextRenderCommand {
             width_percentage,
             scale,
             colour,
+            frame_buffer_index,
         }
     }
-
     fn get_text(&self) -> String {
         let mut result = String::new();
 
@@ -589,10 +591,42 @@ impl TextRenderCommand {
     }
 }
 
-const CHAR_TUPLE_CAPACITY: usize = 32;
+const CHAR_TUPLE_CAPACITY: usize = 64;
 
 #[derive(Default)]
 struct CharTuple(
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
+    char,
     char,
     char,
     char,
@@ -666,6 +700,38 @@ impl Index<u8> for CharTuple {
             29 => &self.29,
             30 => &self.30,
             31 => &self.31,
+            32 => &self.32,
+            33 => &self.33,
+            34 => &self.34,
+            35 => &self.35,
+            36 => &self.36,
+            37 => &self.37,
+            38 => &self.38,
+            39 => &self.39,
+            40 => &self.40,
+            41 => &self.41,
+            42 => &self.42,
+            43 => &self.43,
+            44 => &self.44,
+            45 => &self.45,
+            46 => &self.46,
+            47 => &self.47,
+            48 => &self.48,
+            49 => &self.49,
+            50 => &self.50,
+            51 => &self.51,
+            52 => &self.52,
+            53 => &self.53,
+            54 => &self.54,
+            55 => &self.55,
+            56 => &self.56,
+            57 => &self.57,
+            58 => &self.58,
+            59 => &self.59,
+            60 => &self.60,
+            61 => &self.61,
+            62 => &self.62,
+            63 => &self.63,
             _ => panic!("bad CharTuple index"),
         }
     }
@@ -706,6 +772,38 @@ impl IndexMut<u8> for CharTuple {
             29 => &mut self.29,
             30 => &mut self.30,
             31 => &mut self.31,
+            32 => &mut self.32,
+            33 => &mut self.33,
+            34 => &mut self.34,
+            35 => &mut self.35,
+            36 => &mut self.36,
+            37 => &mut self.37,
+            38 => &mut self.38,
+            39 => &mut self.39,
+            40 => &mut self.40,
+            41 => &mut self.41,
+            42 => &mut self.42,
+            43 => &mut self.43,
+            44 => &mut self.44,
+            45 => &mut self.45,
+            46 => &mut self.46,
+            47 => &mut self.47,
+            48 => &mut self.48,
+            49 => &mut self.49,
+            50 => &mut self.50,
+            51 => &mut self.51,
+            52 => &mut self.52,
+            53 => &mut self.53,
+            54 => &mut self.54,
+            55 => &mut self.55,
+            56 => &mut self.56,
+            57 => &mut self.57,
+            58 => &mut self.58,
+            59 => &mut self.59,
+            60 => &mut self.60,
+            61 => &mut self.61,
+            62 => &mut self.62,
+            63 => &mut self.63,
             _ => panic!("bad CharTuple index"),
         }
     }
@@ -815,7 +913,7 @@ fn main() {
     gl_attr.set_context_minor_version(1);
 
     let canvas: sdl2::render::Canvas<sdl2::video::Window> = video_subsystem
-        .window("Window", 800, 600)
+        .window("Window", INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT)
         .opengl()
         .build()
         .unwrap()
@@ -876,12 +974,6 @@ fn main() {
         loop {
             let start = std::time::Instant::now();
 
-            unsafe {
-                resources.ctx.Clear(
-                    gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT | gl::STENCIL_BUFFER_BIT,
-                );
-            }
-
             events.clear();
 
             for event in event_pump.poll_iter() {
@@ -893,8 +985,46 @@ fn main() {
                     Event::KeyUp {
                         keycode: Some(kc), ..
                     } => events.push(common::Event::KeyUp(unsafe { std::mem::transmute(kc) })),
+                    Event::MouseMotion { x, y, .. } => {
+                        events.push(common::Event::MouseMove((x, y)))
+                    }
+                    Event::MouseButtonUp {
+                        mouse_btn: sdl2::mouse::MouseButton::Left,
+                        ..
+                    } => events.push(common::Event::LeftMouseUp),
+                    Event::MouseButtonDown {
+                        mouse_btn: sdl2::mouse::MouseButton::Left,
+                        ..
+                    } => events.push(common::Event::LeftMouseDown),
+                    Event::MouseButtonUp {
+                        mouse_btn: sdl2::mouse::MouseButton::Right,
+                        ..
+                    } => events.push(common::Event::RightMouseUp),
+                    Event::MouseButtonDown {
+                        mouse_btn: sdl2::mouse::MouseButton::Right,
+                        ..
+                    } => events.push(common::Event::RightMouseDown),
+                    Event::Window {
+                        win_event: sdl2::event::WindowEvent::Resized(w, h),
+                        ..
+                    } |
+                    Event::Window {
+                        win_event: sdl2::event::WindowEvent::SizeChanged(w, h),
+                        ..
+                    } => {
+                        events.push(common::Event::WindowSize((w, h)));
+                        unsafe {
+                            resources.ctx.Viewport(0, 0, w, h);
+                        }
+                    }
                     _ => {}
                 }
+            }
+
+            unsafe {
+                clear_all(&resources.ctx, &resources.frame_buffers);
+
+                resources.ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
             }
 
             if app.update_and_render(&platform, &mut state, &mut events) {
@@ -922,6 +1052,7 @@ fn main() {
                             text_render_command.width_percentage,
                             text_render_command.scale,
                             text_render_command.colour,
+                            text_render_command.frame_buffer_index,
                         );
                     }
                     resources.text_render_commands[i] = None;
@@ -1094,67 +1225,6 @@ frame_buffer_index: usize
     }
 }
 
-//TODO can we pull a common sub-procedure out of this and draw_verts_with_outline?
-fn draw_verts_with_texture(
-    ctx: &gl::Gl,
-    start: isize,
-    vert_count: gl::types::GLsizei,
-    vertex_buffer: gl::types::GLuint,
-    texture_shader: &TextureShader,
-    textures: &Textures,
-    texture_x: gl::types::GLfloat,
-    texture_y: gl::types::GLfloat,
-    texture_w: gl::types::GLfloat,
-    texture_h: gl::types::GLfloat,
-    texture_index: gl::types::GLint,
-    tint_r: gl::types::GLfloat,
-    tint_g: gl::types::GLfloat,
-    tint_b: gl::types::GLfloat,
-    tint_a: gl::types::GLfloat,
-    frame_buffer: gl::types::GLuint,
-) {
-    unsafe {
-        ctx.BindFramebuffer(gl::FRAMEBUFFER, frame_buffer);
-
-        ctx.UseProgram(texture_shader.program);
-
-        ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
-        ctx.EnableVertexAttribArray(texture_shader.pos_attr as _);
-        ctx.VertexAttribPointer(
-            texture_shader.pos_attr as _,
-            2,
-            gl::FLOAT,
-            gl::FALSE as _,
-            0,
-            std::ptr::null().offset(start * std::mem::size_of::<f32>() as isize),
-        );
-
-        ctx.ActiveTexture(gl::TEXTURE0);
-        ctx.BindTexture(gl::TEXTURE_2D, textures[0]);
-        ctx.Uniform1i(texture_shader.texture_uniforms[0], 0);
-
-        ctx.ActiveTexture(gl::TEXTURE1);
-        ctx.BindTexture(gl::TEXTURE_2D, textures[1]);
-        ctx.Uniform1i(texture_shader.texture_uniforms[1], 1);
-
-        ctx.Uniform1i(texture_shader.texture_index_uniform, texture_index);
-
-        ctx.Uniform4f(
-            texture_shader.texture_xywh_uniform,
-            texture_x,
-            texture_y,
-            texture_w,
-            texture_h,
-        );
-
-        ctx.Uniform4f(texture_shader.tint_uniform, tint_r, tint_g, tint_b, tint_a);
-
-        ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
-
-        ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
-    }
-}
-
 fn draw_layer(frame_buffer_index: usize, alpha: f32) {
     if let Some(ref mut resources) = unsafe { RESOURCES.as_mut() } {
         let frame_buffer = get_frame_buffer(resources, frame_buffer_index);
@@ -1190,15 +1260,14 @@ fn draw_layer(frame_buffer_index: usize, alpha: f32) {
                     1.0,
                 ];
 
+                ctx.UseProgram(texture_shader.program);
+
                 resources.ctx.UniformMatrix4fv(
                     resources.texture_shader.matrix_uniform as _,
                     1,
                     gl::FALSE,
                     world_matrix.as_ptr() as _,
                 );
-
-
-                ctx.UseProgram(texture_shader.program);
 
                 ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
                 ctx.EnableVertexAttribArray(texture_shader.pos_attr as _);
@@ -1337,7 +1406,75 @@ fn draw_verts_with_outline(
     }
 }
 
-fn draw_text(text: &str, (x, y): (f32, f32), width_percentage: f32, scale: f32, colour: [f32; 4]) {
+//TODO can we pull a common sub-procedure out of this and draw_verts_with_outline?
+fn draw_verts_with_texture(
+    ctx: &gl::Gl,
+    start: isize,
+    vert_count: gl::types::GLsizei,
+    vertex_buffer: gl::types::GLuint,
+    texture_shader: &TextureShader,
+    textures: &Textures,
+    texture_x: gl::types::GLfloat,
+    texture_y: gl::types::GLfloat,
+    texture_w: gl::types::GLfloat,
+    texture_h: gl::types::GLfloat,
+    texture_index: gl::types::GLint,
+    tint_r: gl::types::GLfloat,
+    tint_g: gl::types::GLfloat,
+    tint_b: gl::types::GLfloat,
+    tint_a: gl::types::GLfloat,
+    frame_buffer: gl::types::GLuint,
+) {
+    unsafe {
+        begin_using_frame_buffer(ctx, frame_buffer);
+
+        ctx.UseProgram(texture_shader.program);
+
+        ctx.BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
+        ctx.EnableVertexAttribArray(texture_shader.pos_attr as _);
+        ctx.VertexAttribPointer(
+            texture_shader.pos_attr as _,
+            2,
+            gl::FLOAT,
+            gl::FALSE as _,
+            0,
+            std::ptr::null().offset(start * std::mem::size_of::<f32>() as isize),
+        );
+
+        ctx.ActiveTexture(gl::TEXTURE0);
+        ctx.BindTexture(gl::TEXTURE_2D, textures[0]);
+        ctx.Uniform1i(texture_shader.texture_uniforms[0], 0);
+
+        ctx.ActiveTexture(gl::TEXTURE1);
+        ctx.BindTexture(gl::TEXTURE_2D, textures[1]);
+        ctx.Uniform1i(texture_shader.texture_uniforms[1], 1);
+
+        ctx.Uniform1i(texture_shader.texture_index_uniform, texture_index);
+
+        ctx.Uniform4f(
+            texture_shader.texture_xywh_uniform,
+            texture_x,
+            texture_y,
+            texture_w,
+            texture_h,
+        );
+
+        ctx.Uniform4f(texture_shader.tint_uniform, tint_r, tint_g, tint_b, tint_a);
+
+        ctx.DrawArrays(gl::TRIANGLE_FAN, 0, vert_count);
+
+        end_using_frame_buffer(ctx);
+    }
+}
+
+fn draw_text(
+    text: &str,
+    (x, y): (f32, f32),
+    width_percentage: f32,
+    scale: f32,
+    colour: [f32; 4],
+    frame_buffer_index: usize,
+) {
     if let Some(ref mut resources) = unsafe { RESOURCES.as_mut() } {
         resources.text_render_commands.push(TextRenderCommand::new(
             text,
@@ -1345,6 +1482,7 @@ fn draw_text(text: &str, (x, y): (f32, f32), width_percentage: f32, scale: f32, 
             width_percentage,
             scale,
             colour,
+            frame_buffer_index,
         ));
     }
 }
@@ -1357,6 +1495,7 @@ fn render_text(
     width_percentage: f32,
     scale: f32,
     colour: [f32; 4],
+    frame_buffer_index: usize,
 ) {
     if let Some(ref resources) = unsafe { RESOURCES.as_ref() } {
         //map from -1 to 1 space ("NDC") to 0 to 1 space
@@ -1364,14 +1503,40 @@ fn render_text(
 
         let ctx = &resources.ctx;
 
-        let paragraph_width = (width_percentage * screen_width as f32) as u32;
+        let paragraph_max_width = (width_percentage * screen_width as f32) as u32;
+
+        let font_scale = Scale::uniform(scale);
+
+        let paragraph_coords = {
+            let v_metrics = font.v_metrics(font_scale);
+
+            let no_offset_glyphs = layout_paragraph(
+                font,
+                Scale::uniform(scale),
+                paragraph_max_width,
+                text,
+                (0.0, v_metrics.line_gap),
+            );
+
+            let paragraph_width = no_offset_glyphs.iter().fold(0, |acc, g| {
+                std::cmp::max(g.pixel_bounding_box().map(|r| r.max.x).unwrap_or(acc), acc)
+            });
+            let paragraph_height = no_offset_glyphs.iter().fold(0, |acc, g| {
+                std::cmp::max(g.pixel_bounding_box().map(|r| r.max.y).unwrap_or(acc), acc)
+            });
+
+            (
+                x01 * screen_width as f32 - (paragraph_width as f32 / 2.0),
+                y01 * screen_height as f32 - (paragraph_height as f32 / 2.0),
+            )
+        };
 
         let glyphs = layout_paragraph(
             font,
-            Scale::uniform(scale),
-            paragraph_width,
+            font_scale,
+            paragraph_max_width,
             text,
-            (x01 * screen_width as f32, y01 * screen_height as f32),
+            paragraph_coords,
         );
         for glyph in &glyphs {
             text_cache.queue_glyph(0, glyph.clone());
@@ -1379,6 +1544,11 @@ fn render_text(
 
         let text_resources = &resources.text_resources;
         unsafe {
+            ctx.BindFramebuffer(
+                gl::FRAMEBUFFER,
+                get_frame_buffer(resources, frame_buffer_index),
+            );
+
             ctx.ActiveTexture(gl::TEXTURE2);
             ctx.BindTexture(gl::TEXTURE_2D, text_resources.texture);
 
@@ -1526,10 +1696,13 @@ fn render_text(
 
             ctx.DrawArrays(gl::TRIANGLES, 0, vert_count);
             ctx.Disable(gl::STENCIL_TEST);
+
             ctx.BindTexture(gl::TEXTURE_2D, 0);
+            ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
         }
     }
 }
+
 
 
 struct ColourShader {
@@ -1542,18 +1715,18 @@ struct ColourShader {
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static UNTEXTURED_VS_SRC: &'static str = "#version 120\n\
-    attribute vec2 position;\n\
-    uniform mat4 matrix;\n\
-    void main() {\n\
+attribute vec2 position;\n\
+uniform mat4 matrix;\n\
+void main() {\n\
     gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
-    }";
+}";
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static UNTEXTURED_FS_SRC: &'static str = "#version 120\n\
-    uniform vec4 colour;\n\
-    void main() {\n\
-       gl_FragColor = colour;\n\
-    }";
+uniform vec4 colour;\n\
+void main() {\n\
+   gl_FragColor = colour;\n\
+}";
 
 struct TextureShader {
     program: gl::types::GLuint,
@@ -1565,37 +1738,37 @@ struct TextureShader {
     tint_uniform: gl::types::GLsizei,
 }
 
-    #[cfg_attr(rustfmt, rustfmt_skip)]
+#[cfg_attr(rustfmt, rustfmt_skip)]
 //calculating the uvs here might be slower than passing them in.
 //Then again, maybe this is faster because of better memory badwidth.
 //We'll profile if it becomes a problem.
 static TEXTURED_VS_SRC: &'static str = "#version 120\n\
-        attribute vec2 position;\n\
-        uniform mat4 matrix;\n\
-        uniform vec4 texture_xywh;\n\
-        varying vec2 texcoord;\n\
-        void main() {\n\
-            vec2 corner = vec2(clamp(position.x, -0.5, 0.5), position.y * -0.5) + vec2(0.5);
-            texcoord = corner * texture_xywh.zw + texture_xywh.xy;
-            gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
-        }";
+attribute vec2 position;\n\
+uniform mat4 matrix;\n\
+uniform vec4 texture_xywh;\n\
+varying vec2 texcoord;\n\
+void main() {\n\
+    vec2 corner = vec2(clamp(position.x, -0.5, 0.5), position.y * -0.5) + vec2(0.5);
+    texcoord = corner * texture_xywh.zw + texture_xywh.xy;
+    gl_Position = matrix * vec4(position, -1.0, 1.0);\n\
+}";
 
-    #[cfg_attr(rustfmt, rustfmt_skip)]
+#[cfg_attr(rustfmt, rustfmt_skip)]
 static TEXTURED_FS_SRC: &'static str = "#version 120\n\
-        uniform sampler2D textures[2];\n\
-        uniform int texture_index;\n\
-        uniform vec4 tint;\n\
-        varying vec2 texcoord;\n\
-        void main() {\n\
-            vec4 tex;
-            if (texture_index == 1) {
-                tex = texture2D(textures[1], texcoord);\n\
-            } else {
-                tex = texture2D(textures[0], texcoord);\n\
-            }
+uniform sampler2D textures[2];\n\
+uniform int texture_index;\n\
+uniform vec4 tint;\n\
+varying vec2 texcoord;\n\
+void main() {\n\
+    vec4 tex;
+    if (texture_index == 1) {
+        tex = texture2D(textures[1], texcoord);\n\
+    } else {
+        tex = texture2D(textures[0], texcoord);\n\
+    }
 
-            gl_FragColor = tex + tint * tex.a;
-        }";
+    gl_FragColor = tex + tint * tex.a;
+}";
 
 struct TextShader {
     program: gl::types::GLuint,
@@ -1607,25 +1780,25 @@ struct TextShader {
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static FONT_VS_SRC: &'static str = "#version 120\n\
-    attribute vec2 position;\n\
-    attribute vec2 texcoord;\n\
-    attribute vec4 colour;\n\
-    varying vec2 v_texcoord;\n\
-    varying vec4 v_colour;\n\
-    void main() {\n\
-        gl_Position = vec4(position, 0.0, 1.0);\n\
-        v_texcoord = texcoord;\n\
-        v_colour = colour;\n\
-    }";
+attribute vec2 position;\n\
+attribute vec2 texcoord;\n\
+attribute vec4 colour;\n\
+varying vec2 v_texcoord;\n\
+varying vec4 v_colour;\n\
+void main() {\n\
+    gl_Position = vec4(position, 0.0, 1.0);\n\
+    v_texcoord = texcoord;\n\
+    v_colour = colour;\n\
+}";
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 static FONT_FS_SRC: &'static str = "#version 120\n\
-    uniform sampler2D tex;\n\
-    varying vec2 v_texcoord;\n\
-    varying vec4 v_colour;\n\
-    void main() {\n\
-        gl_FragColor = v_colour * vec4(1.0, 1.0, 1.0, texture2D(tex, v_texcoord).r);\n\
-    }";
+uniform sampler2D tex;\n\
+varying vec2 v_texcoord;\n\
+varying vec4 v_colour;\n\
+void main() {\n\
+    gl_FragColor = v_colour * vec4(1.0, 1.0, 1.0, texture2D(tex, v_texcoord).r);\n\
+}";
 
 //shader helper functions based on https://gist.github.com/simias/c140d1479ada4d6218c0
 fn compile_shader(ctx: &gl::Gl, src: &str, shader_type: gl::types::GLenum) -> gl::types::GLuint {
@@ -1781,7 +1954,7 @@ fn layout_paragraph<'a>(
 ) -> Vec<PositionedGlyph<'a>> {
     use unicode_normalization::UnicodeNormalization;
     let corner = vector(x, y);
-    let newline_point = (corner.x as u32 + width) as i32;
+    let newline_point = corner.x as i32 + width as i32;
 
     let mut result = Vec::new();
     let v_metrics = font.v_metrics(scale);

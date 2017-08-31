@@ -37,10 +37,16 @@ fn make_state(rng: StdRng) -> State {
         cam_x: 0.0,
         cam_y: 0.0,
         zoom: 1.0,
+        mouse_pos: (400.0, 300.0),
+        mouse_held: false,
+        window_wh: (INITIAL_WINDOW_WIDTH as _, INITIAL_WINDOW_HEIGHT as _),
+        ui_context: UIContext::new(),
         polys: Vec::new(),
         tint_r: 0.1,
         tint_g: 0.0,
         tint_b: 0.0,
+        layer_on: false,
+        layer_alpha: 0.0,
     };
 
     add_random_poly(&mut state);
@@ -53,8 +59,16 @@ const TRANSLATION_SCALE: f32 = 0.0625;
 #[no_mangle]
 //returns true if quit requested
 pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event>) -> bool {
+    let mut mouse_pressed = false;
+    let mut mouse_released = false;
+
     for event in events {
-        println!("{:?}", *event);
+        if cfg!(debug_assertions) {
+            match *event {
+                Event::MouseMove(_) => {}
+                _ => println!("{:?}", *event),
+            }
+        }
 
         match *event {
             Event::Quit | Event::KeyDown(Keycode::Escape) | Event::KeyDown(Keycode::F10) => {
@@ -93,9 +107,48 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
                     state.zoom = std::f32::MIN_POSITIVE / TRANSLATION_SCALE;
                 }
             }
+            Event::MouseMove((x, y)) => {
+                state.mouse_pos = (x as f32, y as f32);
+            }
+            Event::LeftMouseDown => {
+                mouse_pressed = true;
+            }
+            Event::LeftMouseUp => {
+                mouse_released = true;
+            }
+            Event::WindowSize((w, h)) => {
+                state.window_wh = (w as f32, h as f32);
+                if cfg!(debug_assertions) {
+                    println!("aspect ratio: {}", state.window_wh.0 / state.window_wh.1);
+                }
+            }
             _ => {}
         }
     }
+
+    if mouse_released != mouse_pressed {
+        if mouse_released {
+            state.mouse_held = false;
+        } else {
+            state.mouse_held = true;
+        }
+    }
+
+    let mouse_button_state = ButtonState {
+        pressed: mouse_pressed,
+        released: mouse_released,
+        held: state.mouse_held,
+    };
+
+    //map [0,1] to [-1,1]
+    fn center(x: f32) -> f32 {
+        x * 2.0 - 1.0
+    }
+
+    let mouse_x = center((state.mouse_pos.0) / state.window_wh.0);
+    let mouse_y = -center(((state.mouse_pos.1) / state.window_wh.1));
+
+    state.ui_context.frame_init();
 
     let aspect_ratio = 800.0 / 600.0;
     let near = 0.5;
@@ -204,23 +257,235 @@ pub fn update_and_render(p: &Platform, state: &mut State, events: &mut Vec<Event
 
     (p.draw_text)(
         "Hello Text rendering!",
-        (-0.5, 0.60),
+        (0.0, 0.60),
         0.5,
         96.0,
         [1.0, 1.0, 0.0, 1.0],
+        0,
     );
     (p.draw_text)(
         "Hello Text rendering!",
-        (-0.5, 1.0),
+        (0.25, -0.25),
         1.0,
         96.0,
         [0.0, 1.0, 1.0, 0.5],
+        0,
     );
 
+    let label = if state.layer_on {
+        "fade out"
+    } else {
+        "fade in"
+    };
 
+    const FADE_RATE: f32 = 1.0 / 24.0;
+    state.layer_alpha += if state.layer_on {
+        FADE_RATE
+    } else {
+        -FADE_RATE
+    };
+
+    state.layer_alpha = clamp(state.layer_alpha, 0.0, 1.0);
+
+    fn clamp(current: f32, min: f32, max: f32) -> f32 {
+        if current > max {
+            max
+        } else if current < min {
+            min
+        } else {
+            current
+        }
+    }
+
+    let layer = 1;
+    //
+    // (p.draw_poly_with_matrix)(IDENTITY_MAT4X4, 5, layer);
+    // (p.draw_poly_with_matrix)(scale_translation(0.25, 0.5, 0.0625), 4, layer);
+    // (p.draw_poly_with_matrix)(scale_translation(0.25, -0.5, -0.0625), 4, layer);
+    //
+    // (p.draw_poly_with_matrix)(scale_translation(0.0625, 0.0, 1.0 - 0.25), 6, 1);
+
+    // (p.draw_text)(
+    //     "Hello Layered rendering!",
+    //     (0.0, 0.05),
+    //     1.0,
+    //     96.0,
+    //     [1.0, 0.0, 1.0, 0.5],
+    //     1,
+    // );
+
+    let texture_spec = (0.05, 0.05, 0.95, 0.95, 1, 0.0, 0.0, 0.0, 0.0);
+    (p.draw_textured_poly_with_matrix)(camera, 1, texture_spec, 0);
+
+
+    (p.draw_layer)(1, state.layer_alpha);
+
+    if labeled_button(
+        p,
+        &mut state.ui_context,
+        label,
+        (-1.0 + 0.25, 1.0 - 0.125),
+        1,
+        (mouse_x, mouse_y),
+        mouse_button_state,
+    ) {
+        state.layer_on = !state.layer_on;
+    }
 
 
     false
+}
+
+fn labeled_button(
+    p: &Platform,
+    context: &mut UIContext,
+    label: &str,
+    (x, y): (f32, f32),
+    id: UiId,
+    (mouse_x, mouse_y): (f32, f32),
+    state: ButtonState,
+) -> bool {
+    let camera = scale_translation(0.0625, x, y);
+
+    let inverse_camera = inverse_scale_translation(0.0625, x, y);
+
+    let (box_mouse_x, box_mouse_y, _, _) =
+        mat4x4_vector_mul(&inverse_camera, mouse_x, mouse_y, 0.0, 1.0);
+
+    let pointer_inside = box_mouse_x.abs() <= RECT_W_H_RATIO && box_mouse_y.abs() <= 1.0;
+
+    let button_outcome = button_logic(
+        context,
+        Button {
+            id,
+            pointer_inside,
+            state,
+        },
+    );
+
+    match button_outcome.draw_state {
+        Pressed => {
+            let texture_spec = (0.0, 0.0, 1.0, 1.0, 1, 0.0, 0.0, 0.0, 0.0);
+            (p.draw_textured_poly_with_matrix)(camera, 6, texture_spec, 0);
+        }
+        Hover => {
+            let texture_spec = (0.0, 0.0, 1.0, 1.0, 0, 0.0, 0.0, 0.0, 0.0);
+            (p.draw_textured_poly_with_matrix)(camera, 6, texture_spec, 0);
+        }
+        Inactive => {
+            (p.draw_poly_with_matrix)(camera, 6, 0);
+        }
+    }
+
+    let font_scale = if label.len() > 8 { 18.0 } else { 24.0 };
+
+    (p.draw_text)(label, (x, y), 1.0, font_scale, [1.0; 4], 0);
+
+    button_outcome.clicked
+}
+
+#[derive(Copy, Clone, Debug)]
+struct Button {
+    id: UiId,
+    pointer_inside: bool,
+    state: ButtonState,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct ButtonState {
+    pressed: bool,
+    released: bool,
+    held: bool,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct ButtonOutcome {
+    clicked: bool,
+    draw_state: DrawState,
+}
+
+impl Default for ButtonOutcome {
+    fn default() -> Self {
+        ButtonOutcome {
+            clicked: false,
+            draw_state: Inactive,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+enum DrawState {
+    Pressed,
+    Hover,
+    Inactive,
+}
+use DrawState::*;
+
+///This function handles the logic for a given button and returns wheter it was clicked
+///and the state of the button so it can be drawn properly elsestate of the button so
+///it can be drawn properly elsewhere
+fn button_logic(context: &mut UIContext, button: Button) -> ButtonOutcome {
+    /// In order for this to work properly `context.frame_init();`
+    /// must be called at the start of each frame, before this function is called
+    let mut clicked = false;
+
+    let inside = button.pointer_inside;
+
+    let id = button.id;
+
+    if context.active == id {
+        if button.state.released {
+            clicked = context.hot == id && inside;
+
+            context.set_not_active();
+        }
+    } else if context.hot == id {
+        if button.state.pressed {
+            context.set_active(id);
+        }
+    }
+
+    if inside {
+        context.set_next_hot(id);
+    }
+
+    let draw_state = if context.active == id && (button.state.held || button.state.pressed) {
+        Pressed
+    } else if context.hot == id {
+        Hover
+    } else {
+        Inactive
+    };
+
+    ButtonOutcome {
+        clicked,
+        draw_state,
+    }
+}
+
+fn scale_translation(scale: f32, x_offest: f32, y_offset: f32) -> [f32; 16] {
+    [
+        scale,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        scale,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        x_offest,
+        y_offset,
+        0.0,
+        1.0,
+    ]
+}
+
+fn inverse_scale_translation(scale: f32, x_offest: f32, y_offset: f32) -> [f32; 16] {
+    scale_translation(1.0 / scale, -x_offest / scale, -y_offset / scale)
 }
 
 fn add_random_poly(state: &mut State) {
@@ -333,7 +598,7 @@ pub fn get_vert_vecs() -> Vec<Vec<f32>> {
         -0.036111, -0.158214,
         -1.037129, -0.000000,
         ],
-        //invers 6 point star
+        //invert 6 point star
         vec![
         -1.037129, 0.000000,
         -0.583093, -0.055358,
@@ -378,6 +643,15 @@ pub fn get_vert_vecs() -> Vec<Vec<f32>> {
         0.147031, -0.195748,
         -0.204743, -0.117901,
         -1.037129, 0.000000
-        ]
+        ],
+        //wide rectangle
+        vec![
+            -RECT_W_H_RATIO, 1.0,
+            -RECT_W_H_RATIO, -1.0,
+            RECT_W_H_RATIO, -1.0,
+            RECT_W_H_RATIO, 1.0,
+            -RECT_W_H_RATIO, 1.0,
+        ],
     ]
 }
+const RECT_W_H_RATIO: f32 = 3.0;

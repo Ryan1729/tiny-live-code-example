@@ -2,6 +2,9 @@ extern crate rand;
 
 use rand::{Rng, StdRng};
 
+pub const INITIAL_WINDOW_WIDTH: u32 = 800;
+pub const INITIAL_WINDOW_HEIGHT: u32 = 600;
+
 pub fn random_string(rng: &mut StdRng) -> String {
     rng.gen_ascii_chars().take(6).collect()
 }
@@ -11,7 +14,7 @@ pub struct Platform {
     pub draw_poly_with_matrix: fn([f32; 16], usize, usize),
     pub draw_textured_poly: fn(f32, f32, usize, TextureSpec, usize),
     pub draw_textured_poly_with_matrix: fn([f32; 16], usize, TextureSpec, usize),
-    pub draw_text: fn(&str, (f32, f32), f32, f32, [f32; 4]),
+    pub draw_text: fn(&str, (f32, f32), f32, f32, [f32; 4], usize),
     pub draw_layer: fn(usize, f32),
     pub set_verts: fn(Vec<Vec<f32>>),
 }
@@ -21,11 +24,17 @@ pub struct State {
     pub cam_x: f32,
     pub cam_y: f32,
     pub zoom: f32,
+    pub mouse_pos: (f32, f32),
+    pub mouse_held: bool,
+    pub window_wh: (f32, f32),
+    pub ui_context: UIContext,
     // demo related
     pub polys: Vec<Polygon>,
     pub tint_r: f32,
     pub tint_g: f32,
     pub tint_b: f32,
+    pub layer_on: bool,
+    pub layer_alpha: f32,
 }
 
 pub struct Polygon {
@@ -40,7 +49,51 @@ pub enum Event {
     Quit,
     KeyDown(Keycode),
     KeyUp(Keycode),
+    MouseMove((i32, i32)),
+    LeftMouseUp,
+    LeftMouseDown,
+    RightMouseUp,
+    RightMouseDown,
+    WindowSize((i32, i32)),
 }
+
+pub type UiId = i32;
+
+pub struct UIContext {
+    pub hot: UiId,
+    pub active: UiId,
+    pub next_hot: UiId,
+}
+
+impl UIContext {
+    pub fn new() -> Self {
+        UIContext {
+            hot: 0,
+            active: 0,
+            next_hot: 0,
+        }
+    }
+
+    pub fn set_not_active(&mut self) {
+        self.active = 0;
+    }
+    pub fn set_active(&mut self, id: UiId) {
+        self.active = id;
+    }
+    pub fn set_next_hot(&mut self, id: UiId) {
+        self.next_hot = id;
+    }
+    pub fn set_not_hot(&mut self) {
+        self.hot = 0;
+    }
+    pub fn frame_init(&mut self) {
+        if self.active == 0 {
+            self.hot = self.next_hot;
+        }
+        self.next_hot = 0;
+    }
+}
+
 
 pub type TextureSpec = (f32, f32, f32, f32, i32, f32, f32, f32, f32);
 
@@ -112,6 +165,190 @@ pub fn get_projection(spec: &ProjectionSpec) -> [f32; 16] {
     }
 }
 
+pub const IDENTITY_MAT4X4: [f32; 16] = [
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.0,
+];
+
+#[cfg(test)]
+#[macro_use]
+extern crate quickcheck;
+
+#[cfg(test)]
+mod mat4x4_tests {
+    use ::*;
+
+    impl Rand for ProjectionSpec {
+        fn rand<R: Rng>(rng: &mut R) -> Self {
+            ProjectionSpec {
+                top: rng.gen(),
+                bottom: rng.gen(),
+                left: rng.gen(),
+                right: rng.gen(),
+                near: rng.gen(),
+                far: rng.gen(),
+                projection: rng.gen(),
+            }
+        }
+    }
+
+    impl quickcheck::Arbitrary for ProjectionSpec {
+        fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> ProjectionSpec {
+            g.gen()
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    struct Mat4x4 {
+        m: [f32; 16],
+    }
+
+    impl Rand for Mat4x4 {
+        fn rand<R: Rng>(rng: &mut R) -> Self {
+            let m = [
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+                rng.gen(),
+            ];
+
+            Mat4x4 { m }
+        }
+    }
+
+    impl quickcheck::Arbitrary for Mat4x4 {
+        fn arbitrary<G: quickcheck::Gen>(g: &mut G) -> Mat4x4 {
+            g.gen()
+        }
+    }
+
+    #[cfg_attr(rustfmt, rustfmt_skip)]
+    quickcheck! {
+        fn projection_inversion(mat4x4: Mat4x4, spec_: ProjectionSpec) -> bool {
+            let m = mat4x4.m;
+
+            let mut spec = spec_.clone();
+            spec.projection = Orthographic;
+            let p = get_projection(&spec);
+            let p_inv = get_projection(&spec.inverse());
+
+            let actual = mat4x4_mul(&p_inv, &mat4x4_mul(&p,&m));
+
+            // m ~= actual
+            let mut error:f32 = 0.0;
+            for i in 0..actual.len() {
+                let current_error = (actual[i] - m[i]).abs();
+                error = if error > current_error {
+                    error
+                } else {
+                    current_error
+                };
+            }
+
+            error <= 0.0001
+        }
+
+        fn projection_camera_inversion(
+            mat4x4: Mat4x4,
+            spec_: ProjectionSpec,
+            cam_x: f32,
+            cam_y:f32
+        )
+            -> bool
+        {
+            let m = mat4x4.m;
+
+            let mut spec = spec_.clone();
+            spec.projection = Orthographic;
+            let p = get_projection(&spec);
+            let p_inv = get_projection(&spec.inverse());
+
+            let camera = [
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                cam_x,
+                cam_y,
+                0.0,
+                1.0,
+            ];
+
+            let camera_inv = [
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                -cam_x,
+                -cam_y,
+                0.0,
+                1.0,
+            ];
+
+            let view = mat4x4_mul(&camera, &p);
+            let view_inv = mat4x4_mul(&p_inv, &camera_inv);
+
+            let actual = mat4x4_mul(&view_inv, &mat4x4_mul(&view,&m));
+
+            // m ~= actual
+            let mut error:f32 = 0.0;
+            for i in 0..actual.len() {
+                let current_error = (actual[i] - m[i]).abs();
+                error = if error > current_error {
+                    error
+                } else {
+                    current_error
+                };
+            }
+            println!("error {}", error);
+            error <= 0.25
+        }
+    }
+
+}
+
 pub fn mat4x4_mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
     [
         a[0] * b[0] + a[1] * b[4] + a[2] * b[8] + a[3] * b[12],
@@ -131,6 +368,31 @@ pub fn mat4x4_mul(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
         a[12] * b[2] + a[13] * b[6] + a[14] * b[10] + a[15] * b[14],
         a[12] * b[3] + a[13] * b[7] + a[14] * b[11] + a[15] * b[15],
     ]
+}
+
+pub fn mat4x4_vector_mul(
+    m: &[f32; 16],
+    v_0: f32,
+    v_1: f32,
+    v_2: f32,
+    v_3: f32,
+) -> (f32, f32, f32, f32) {
+    (
+        m[0] * v_0 + m[4] * v_1 + m[8] * v_2 + m[12] * v_3,
+        m[1] * v_0 + m[5] * v_1 + m[9] * v_2 + m[13] * v_3,
+        m[2] * v_0 + m[6] * v_1 + m[10] * v_2 + m[14] * v_3,
+        m[3] * v_0 + m[7] * v_1 + m[11] * v_2 + m[15] * v_3,
+    )
+}
+pub fn mat4x4_vector_mul_divide(
+    m: &[f32; 16],
+    v_0: f32,
+    v_1: f32,
+    v_2: f32,
+    v_3: f32,
+) -> (f32, f32, f32, f32) {
+    let (x, y, z, w) = mat4x4_vector_mul(m, v_0, v_1, v_2, v_3);
+    (x / w, y / w, z / w, 1.0)
 }
 
 //combined from https://github.com/AngryLawyer/rust-sdl2/blob/master/sdl2-sys/src/keycode.rs
