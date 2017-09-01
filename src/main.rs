@@ -158,7 +158,8 @@ fn find_sdl_gl_driver() -> Option<u32> {
     None
 }
 
-type Ranges = [(u16, u16); 16];
+const RANGES_LEN: usize = 16;
+type Ranges = [(u16, u16); RANGES_LEN];
 
 static mut RESOURCES: Option<Resources> = None;
 
@@ -391,8 +392,31 @@ impl Resources {
         Some(result)
     }
 
+    ///This is called by the Platform `set_verts` function.
+    ///`draw_layer` relies on a set of square verticies being on the GPU to work correctly,
+    //so the following verts are added onto the end of the vert buffer:
+    /// vec![
+    ///     -1.0, 1.0,
+    ///     -1.0, -1.0,
+    ///     1.0, -1.0,
+    ///     1.0, 1.0,
+    ///     ]
     fn set_verts(&mut self, vert_vecs: Vec<Vec<f32>>) {
-        let (verts, vert_ranges, vert_ranges_len) = get_verts_and_ranges(vert_vecs);
+        let (mut verts, mut vert_ranges, mut vert_ranges_len) = get_verts_and_ranges(vert_vecs);
+
+        //We subtract 1 to make room for the extra square on the end.
+        assert!(
+            vert_ranges_len <= RANGES_LEN - 1,
+            "Too many polygons defined!"
+        );
+
+        let (_, old_end) = vert_ranges[vert_ranges_len - 1];
+
+        verts.append(&mut vec![-1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0]);
+
+        vert_ranges_len += 1;
+
+        vert_ranges[vert_ranges_len - 1] = (old_end + 1, old_end + 8);
 
         unsafe {
             self.ctx.BindBuffer(gl::ARRAY_BUFFER, self.vertex_buffer);
@@ -1233,7 +1257,8 @@ fn draw_layer(frame_buffer_index: usize, alpha: f32) {
         let vertex_buffer = resources.vertex_buffer;
         let ctx = &resources.ctx;
 
-        let (start, end) = resources.vert_ranges[1];
+        //There should always be the verts for a square at the end of the verts
+        let (start, end) = resources.vert_ranges[resources.vert_ranges_len - 1];
         let vert_count = ((end + 1 - start) / 2) as _;
 
         if frame_buffer != 0 {
@@ -1692,10 +1717,7 @@ fn render_text(
             ctx.BindTexture(gl::TEXTURE_2D, text_resources.texture);
             ctx.Uniform1i(shader.texture_uniform, 2);
 
-            ctx.Clear(gl::STENCIL_BUFFER_BIT);
-
             ctx.DrawArrays(gl::TRIANGLES, 0, vert_count);
-            ctx.Disable(gl::STENCIL_TEST);
 
             ctx.BindTexture(gl::TEXTURE_2D, 0);
             ctx.BindFramebuffer(gl::FRAMEBUFFER, 0);
