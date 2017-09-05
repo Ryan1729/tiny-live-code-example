@@ -1,8 +1,12 @@
-# Live Code SDL2 OpenGL 2.1 Template
+# Tiny Live Code Example
 
-This is a template crate to make it easy to start a new project using SDL2 and OpenGL 2.1, with live code reloading.
+This is an example crate demonstrating a way to do live code reloading.
 
-Similarly to the way [live-code-bear-lib-terminal-template](https://github.com/Ryan1729/live-code-bear-lib-terminal-template) turned out, the plan is to use this template in projects, then backport generally useful additions to the `Platform` struct, expanding that API based on actuall usage, rather than blind guessing.
+This crate is currently only tested on Linux and previous Windows version attempts have
+
+# How does this work?
+
+The basic idea is that (in debug mode) we load a dynamic library, pass it a mutable reference to a chunk of state. We then check the modification time of the library periodically and swap it out if it is newer than before. Because we only gave th library code a mutable reference to the state, it is still safe and sound and the program can continue on uninterupeted if the changes aren't too drastic.
 
 ## Compiling release mode
 
