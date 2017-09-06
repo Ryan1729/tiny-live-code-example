@@ -8,6 +8,9 @@ extern crate state_manipulation;
 #[cfg(debug_assertions)]
 use libloading::Library;
 
+#[cfg(debug_assertions)]
+use std::mem::ManuallyDrop;
+
 use common::*;
 
 #[cfg(all(debug_assertions, unix))]
@@ -19,8 +22,18 @@ const LIB_PATH: &'static str = "Hopefully compiled out";
 
 #[cfg(debug_assertions)]
 struct Application {
-    library: Library,
+    library: ManuallyDrop<Library>,
 }
+
+#[cfg(debug_assertions)]
+impl Drop for Application {
+    fn drop(&mut self) {
+        unsafe {
+            ManuallyDrop::drop(&mut self.library);
+        }
+    }
+}
+
 #[cfg(not(debug_assertions))]
 struct Application {}
 
@@ -29,7 +42,9 @@ impl Application {
     fn new() -> Self {
         let library = Library::new(LIB_PATH).unwrap_or_else(|error| panic!("{}", error));
 
-        Application { library: library }
+        Application {
+            library: ManuallyDrop::new(library),
+        }
     }
 
     fn new_state(&self) -> State {

@@ -1,8 +1,10 @@
 [root]
-name = "state_manipulation"
+name = "tiny-live-code-example"
 version = "0.1.0"
 dependencies = [
  "common 0.1.0",
+ "libloading 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "state_manipulation 0.1.0",
 ]
 
 [[package]]
@@ -34,12 +36,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "live-code-sdl2-opengl-2_1-template"
+name = "state_manipulation"
 version = "0.1.0"
 dependencies = [
  "common 0.1.0",
- "libloading 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "state_manipulation 0.1.0",
 ]
 
 [[package]]
