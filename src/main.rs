@@ -81,7 +81,7 @@ fn main() {
 
     app.update_and_render(&platform, &mut state);
 
-    let frame_duration = std::time::Duration::new(0, 50000000);
+    let frame_duration = std::time::Duration::new(0, 4000000000);
 
     loop {
         let start = std::time::Instant::now();
@@ -90,6 +90,8 @@ fn main() {
 
         if cfg!(debug_assertions) {
             if let Ok(Ok(modified)) = std::fs::metadata(LIB_PATH).map(|m| m.modified()) {
+                println!("last_modified: {:?}", last_modified,);
+                println!("modified: {:?}", modified,);
                 if modified > last_modified {
                     drop(app);
                     app = Application::new();
