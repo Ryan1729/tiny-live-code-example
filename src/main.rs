@@ -35,7 +35,7 @@ impl Application {
     fn new_state(&self) -> State {
         unsafe {
             let f = self.library
-                .get::<fn() -> State>(b"lib_new_state\0")
+                .get::<extern "C" fn() -> State>(b"lib_new_state\0")
                 .unwrap();
 
             f()
@@ -45,7 +45,7 @@ impl Application {
     fn update_and_render(&self, platform: &Platform, state: &mut State) {
         unsafe {
             let f = self.library
-                .get::<fn(&Platform, &mut State)>(b"lib_update_and_render\0")
+                .get::<extern "C" fn(&Platform, &mut State)>(b"lib_update_and_render\0")
                 .unwrap();
             f(platform, state)
         }
