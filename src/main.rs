@@ -42,39 +42,16 @@ impl Application {
         }
     }
 
-    fn update_and_render(&self, platform: &Platform, state: &mut State) -> bool {
+    fn update_and_render(&self, platform: &Platform, state: &mut State) {
         unsafe {
             let f = self.library
-                .get::<fn(&Platform, &mut State) -> bool>(b"lib_update_and_render\0")
+                .get::<fn(&Platform, &mut State)>(b"lib_update_and_render\0")
                 .unwrap();
             f(platform, state)
         }
     }
 }
-// impl Application {
-//     fn new() -> Self {
-//         let library = Library::new(LIB_PATH).unwrap_or_else(|error| panic!("{}", error));
-//
-//         Application { library: library }
-//     }
-//
-//     fn new_state(&self) -> State {
-//         unsafe {
-//             let f = self.library.get::<fn() -> State>(b"new_state\0").unwrap();
-//
-//             f()
-//         }
-//     }
-//
-//     fn update_and_render(&self, platform: &Platform, state: &mut State) -> bool {
-//         unsafe {
-//             let f = self.library
-//                 .get::<fn(&Platform, &mut State) -> bool>(b"update_and_render\0")
-//                 .unwrap();
-//             f(platform, state)
-//         }
-//     }
-// }
+
 #[cfg(not(debug_assertions))]
 impl Application {
     fn new() -> Self {
@@ -85,7 +62,7 @@ impl Application {
         state_manipulation::new_state()
     }
 
-    fn update_and_render(&self, platform: &Platform, state: &mut State) -> bool {
+    fn update_and_render(&self, platform: &Platform, state: &mut State) {
         state_manipulation::update_and_render(platform, state)
     }
 }
