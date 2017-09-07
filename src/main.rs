@@ -34,7 +34,9 @@ impl Application {
 
     fn new_state(&self) -> State {
         unsafe {
-            let f = self.library.get::<fn() -> State>(b"new_state\0").unwrap();
+            let f = self.library
+                .get::<fn() -> State>(b"lib_new_state\0")
+                .unwrap();
 
             f()
         }
@@ -43,12 +45,36 @@ impl Application {
     fn update_and_render(&self, platform: &Platform, state: &mut State) -> bool {
         unsafe {
             let f = self.library
-                .get::<fn(&Platform, &mut State) -> bool>(b"update_and_render\0")
+                .get::<fn(&Platform, &mut State) -> bool>(b"lib_update_and_render\0")
                 .unwrap();
             f(platform, state)
         }
     }
 }
+// impl Application {
+//     fn new() -> Self {
+//         let library = Library::new(LIB_PATH).unwrap_or_else(|error| panic!("{}", error));
+//
+//         Application { library: library }
+//     }
+//
+//     fn new_state(&self) -> State {
+//         unsafe {
+//             let f = self.library.get::<fn() -> State>(b"new_state\0").unwrap();
+//
+//             f()
+//         }
+//     }
+//
+//     fn update_and_render(&self, platform: &Platform, state: &mut State) -> bool {
+//         unsafe {
+//             let f = self.library
+//                 .get::<fn(&Platform, &mut State) -> bool>(b"update_and_render\0")
+//                 .unwrap();
+//             f(platform, state)
+//         }
+//     }
+// }
 #[cfg(not(debug_assertions))]
 impl Application {
     fn new() -> Self {
@@ -81,7 +107,7 @@ fn main() {
 
     app.update_and_render(&platform, &mut state);
 
-    let frame_duration = std::time::Duration::new(0, 50000000);
+    let frame_duration = std::time::Duration::new(0, 2000000000);
 
     loop {
         let start = std::time::Instant::now();
@@ -90,6 +116,8 @@ fn main() {
 
         if cfg!(debug_assertions) {
             if let Ok(Ok(modified)) = std::fs::metadata(LIB_PATH).map(|m| m.modified()) {
+                println!("was: {:?}", last_modified);
+                println!("now: {:?}", modified);
                 if modified > last_modified {
                     drop(app);
                     app = Application::new();
