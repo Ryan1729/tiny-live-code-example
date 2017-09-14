@@ -1,10 +1,6 @@
-extern crate common;
-
 extern crate libloading;
 
 use libloading::Library;
-
-use common::*;
 
 #[cfg(all(debug_assertions, unix))]
 const LIB_PATH: &'static str = "./target/debug/libstate_manipulation.so";
@@ -27,22 +23,12 @@ impl Application {
         Application { library: library }
     }
 
-    fn new_state(&self) -> State {
+    fn update_and_render(&self, counter: &mut i64) {
         unsafe {
             let f = self.library
-                .get::<extern "C" fn() -> State>(b"lib_new_state\0")
+                .get::<extern "C" fn(&mut i64)>(b"lib_update_and_render\0")
                 .unwrap();
-
-            f()
-        }
-    }
-
-    fn update_and_render(&self, platform: &Platform, state: &mut State) {
-        unsafe {
-            let f = self.library
-                .get::<extern "C" fn(&Platform, &mut State)>(b"lib_update_and_render\0")
-                .unwrap();
-            f(platform, state)
+            f(counter)
         }
     }
 }
@@ -50,21 +36,18 @@ impl Application {
 fn main() {
     let mut app = Application::new();
 
-    let mut state = app.new_state();
+    let mut counter = 0;
 
     let mut last_modified = std::fs::metadata(LIB_PATH).unwrap().modified().unwrap();
 
-    //You can put platform-specfic fn pointers here
-    let platform = Platform {};
-
-    app.update_and_render(&platform, &mut state);
+    app.update_and_render(&mut counter);
 
     let frame_duration = std::time::Duration::new(0, 2000000000);
 
     loop {
         let start = std::time::Instant::now();
 
-        app.update_and_render(&platform, &mut state);
+        app.update_and_render(&mut counter);
 
         if let Ok(Ok(modified)) = std::fs::metadata(LIB_PATH).map(|m| m.modified()) {
             println!("was: {:?}", last_modified);

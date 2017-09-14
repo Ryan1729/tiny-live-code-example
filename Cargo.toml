@@ -7,11 +7,7 @@ authors = ["Ryan1729 <Ryan1729@gmail.com>"]
 [workspace]
 
 [dependencies]
-#TODO can this be a dev dependancy?
 libloading = "0.4"
-
-[dependencies.common]
-path = "./common"
 
 [dependencies.state_manipulation]
 path = "./state_manipulation"
