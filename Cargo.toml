@@ -9,5 +9,8 @@ authors = ["Ryan1729 <Ryan1729@gmail.com>"]
 [dependencies]
 libloading = "0.4"
 
-[dependencies.state_manipulation]
-path = "./state_manipulation"
+[dependencies.state_manipulation1]
+path = "./state_manipulation1"
+
+[dependencies.state_manipulation1000]
+path = "./state_manipulation1000"

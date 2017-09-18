@@ -3,7 +3,8 @@ name = "tiny-live-code-example"
 version = "0.1.0"
 dependencies = [
  "libloading 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "state_manipulation 0.1.0",
+ "state_manipulation1 0.1.0",
+ "state_manipulation1000 0.1.0",
 ]
 
 [[package]]
@@ -31,7 +32,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "state_manipulation"
+name = "state_manipulation1"
+version = "0.1.0"
+
+[[package]]
+name = "state_manipulation1000"
 version = "0.1.0"
 
 [[package]]
