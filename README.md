@@ -2,7 +2,9 @@
 
 This is an example crate demonstrating a way to do live code reloading.
 
-This crate is currently only tested on Linux and previous Windows version attempts have
+![demo gif](/demo.gif?raw=true "Demo gif")
+
+This crate is currently only tested on Linux
 
 # How does this work?
 
