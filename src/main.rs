@@ -12,10 +12,23 @@ use common::*;
 
 #[cfg(all(debug_assertions, unix))]
 const LIB_PATH: &'static str = "./target/debug/libstate_manipulation.so";
+#[cfg(all(debug_assertions, unix))]
+const LIB_PREFIX: &'static str = "./target/debug/reloaded/libstate_manipulation";
+#[cfg(all(debug_assertions, unix))]
+const LIB_EXT: &'static str = ".so";
+
+
 #[cfg(all(debug_assertions, windows))]
 const LIB_PATH: &'static str = "./target/debug/state_manipulation.dll";
+#[cfg(all(debug_assertions, windows))]
+const LIB_PREFIX: &'static str = "./target/debug/reloaded/state_manipulation";
+#[cfg(all(debug_assertions, windows))]
+const LIB_EXT: &'static str = ".dll";
 #[cfg(not(debug_assertions))]
 const LIB_PATH: &'static str = "Hopefully compiled out";
+
+#[cfg(debug_assertions)]
+use std::path::PathBuf;
 
 #[cfg(debug_assertions)]
 struct Application {
@@ -27,7 +40,36 @@ struct Application {}
 #[cfg(debug_assertions)]
 impl Application {
     fn new() -> Self {
-        let library = Library::new(LIB_PATH).unwrap_or_else(|error| panic!("{}", error));
+        fn make_path_buf(counter: usize) -> PathBuf {
+            let mut result = PathBuf::new();
+
+            result.push(format!("{}{}{}", LIB_PREFIX, counter, LIB_EXT));
+
+            result
+        }
+
+        //TODO A binary-search-like thing could be done to make this O(log n)
+        let mut counter = 0;
+        let mut path = make_path_buf(counter);
+        let mut new_path = make_path_buf(counter);
+
+        println!("start by trying {}", new_path.to_str().unwrap());
+
+        if new_path.exists() {
+            while new_path.exists() {
+                path = new_path;
+                counter += 1;
+                new_path = make_path_buf(counter);
+                println!("trying {}", new_path.to_str().unwrap());
+            }
+        } else {
+            path = PathBuf::new();
+            path.push(LIB_PATH.to_string());
+        }
+
+        println!("loading {}", path.to_str().unwrap());
+
+        let library = Library::new(path).unwrap_or_else(|error| panic!("{}", error));
 
         Application { library: library }
     }

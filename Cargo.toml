@@ -2,6 +2,7 @@
 name = "tiny-live-code-example"
 version = "0.1.0"
 authors = ["Ryan1729 <Ryan1729@gmail.com>"]
+build = "build.rs"
 
 #this is needed so the state manipulation dynamic lib is put in the right place
 [workspace]
