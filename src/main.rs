@@ -10,13 +10,21 @@ use libloading::Library;
 
 use common::*;
 
-#[cfg(all(debug_assertions, unix))]
-const LIB_PATH: &'static str = "./target/debug/libstate_manipulation.so";
-#[cfg(all(debug_assertions, unix))]
+//THe only alternative to most of this repitition I've found is macros,
+// which in this case seems overcomplicated.
+#[cfg(all(debug_assertions, unix, target_os = "macos"))]
+const LIB_PATH: &'static str = "./target/debug/libstate_manipulation.dylib";
+#[cfg(all(debug_assertions, unix, target_os = "macos"))]
 const LIB_PREFIX: &'static str = "./target/debug/reloaded/libstate_manipulation";
-#[cfg(all(debug_assertions, unix))]
-const LIB_EXT: &'static str = ".so";
+#[cfg(all(debug_assertions, unix, target_os = "macos"))]
+const LIB_EXT: &'static str = ".dylib";
 
+#[cfg(all(debug_assertions, unix, not(target_os = "macos")))]
+const LIB_PATH: &'static str = "./target/debug/libstate_manipulation.so";
+#[cfg(all(debug_assertions, unix, not(target_os = "macos")))]
+const LIB_PREFIX: &'static str = "./target/debug/reloaded/libstate_manipulation";
+#[cfg(all(debug_assertions, unix, not(target_os = "macos")))]
+const LIB_EXT: &'static str = ".so";
 
 #[cfg(all(debug_assertions, windows))]
 const LIB_PATH: &'static str = "./target/debug/state_manipulation.dll";
@@ -24,6 +32,7 @@ const LIB_PATH: &'static str = "./target/debug/state_manipulation.dll";
 const LIB_PREFIX: &'static str = "./target/debug/reloaded/state_manipulation";
 #[cfg(all(debug_assertions, windows))]
 const LIB_EXT: &'static str = ".dll";
+
 #[cfg(not(debug_assertions))]
 const LIB_PATH: &'static str = "Hopefully compiled out";
 
