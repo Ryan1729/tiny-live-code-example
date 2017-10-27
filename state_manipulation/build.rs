@@ -28,28 +28,40 @@ fn main() {
 
         let lib_name = &format!("{}{}", crate_name, count);
 
+        let target_string = target.to_str().unwrap();
+
         // rlib number instructions:
         //to update the rlib number, comment out everything below this
         //and run `cargo build -vv` and note what is passed to rustc
         //while building state_manipulation. Specifically look for
-        //something like the string below and change the number
-        //(between "-" and ".rlib" below), to match.
-        let common = &format!(
-            "common={}/deps/libcommon-4235dfc929cd5f11.rlib",
-            target.to_str().unwrap()
-        );
+        //something immeadiately after an `--extern` flag that looks
+        //like the string below and change the number (the part between
+        //"-" and ".rlib" below), to match, or add an entry to this
+        //vector if there is an unaccounted for `--extern` flag.
+        let dependancies = vec![
+            format!(
+                "common={}/deps/libcommon-4235dfc929cd5f11.rlib",
+                target_string
+            ),
+        ];
+        let r = {
+            let mut c = Command::new("rustc");
+            c.arg(&format!("{}/src/lib.rs", current_dir.to_str().unwrap()))
+                .arg("--crate-name")
+                .arg(lib_name)
+                .arg("--crate-type")
+                .arg("dylib")
+                .arg("-L")
+                .arg(format!("dependency={}/deps", target_string))
+                .arg("--out-dir")
+                .arg(reloaded);
 
-        let r = Command::new("rustc")
-            .arg(&format!("{}/src/lib.rs", current_dir.to_str().unwrap()))
-            .arg("--crate-name")
-            .arg(lib_name)
-            .arg("--crate-type")
-            .arg("dylib")
-            .arg("--out-dir")
-            .arg(reloaded)
-            .arg("--extern")
-            .arg(common)
-            .output();
+            for dependacy in dependancies {
+                c.arg("--extern").arg(dependacy);
+            }
+
+            c.output()
+        };
 
         match r {
             Err(e) => panic!("failed to execute process: {}", e),
