@@ -28,9 +28,12 @@ fn main() {
 
         let lib_name = &format!("{}{}", crate_name, count);
 
-        //to update this, comment out everything below this
-        //and run `cargo build -vv` and note waht is passed
-        //to rustc while building state_manipulation
+        // rlib number instructions:
+        //to update the rlib number, comment out everything below this
+        //and run `cargo build -vv` and note what is passed to rustc
+        //while building state_manipulation. Specifically look for
+        //something like the string below and change the number here
+        //to match
         let common = &format!(
             "common={}/deps/libcommon-4235dfc929cd5f11.rlib",
             target.to_str().unwrap()
@@ -50,8 +53,18 @@ fn main() {
 
         match r {
             Err(e) => panic!("failed to execute process: {}", e),
-            Ok(_) => {}
-            // Ok(o) => panic!("{:?}", o),
+            Ok(output) => match output.status.code() {
+                Some(101) => {
+                    let message = format!(
+                        "Looks like the rlib number changed. \
+                         Open the {} build.rs and follow the rlib number instructions.",
+                        crate_name
+                    );
+                    panic!("\n\n{}\n\n {:?}", message, output)
+                }
+                Some(0) => {}
+                _ => panic!("{:?}", output),
+            },
         }
     }
 }
