@@ -11,5 +11,5 @@ pub fn new_state() -> State {
 pub fn update_and_render(_p: &Platform, state: &mut State) {
     println!("{}", state.counter);
 
-    state.counter += 3;
+    state.counter += 1;
 }
